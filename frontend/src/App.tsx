@@ -5,6 +5,7 @@ import { PipelineFlow } from './components/PipelineFlow';
 import { AnalyticsCharts } from './components/AnalyticsCharts';
 import { AuditTrailTable } from './components/AuditTrailTable';
 import { TransactionModal } from './components/TransactionModal';
+import { UploadModal } from './components/UploadModal';
 import { Transaction, SummaryStats } from './types';
 import './styles.css';
 
@@ -12,6 +13,7 @@ export const App: React.FC = () => {
   const [summary, setSummary] = useState<SummaryStats | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
@@ -82,7 +84,7 @@ export const App: React.FC = () => {
   };
 
   const handleReset = async () => {
-    if (!window.confirm('Reset all 150 transactions back to fresh pending state?')) return;
+    if (!window.confirm('Reset all transactions back to fresh pending state?')) return;
     try {
       const res = await fetch('/reset', { method: 'POST' });
       if (res.ok) {
@@ -103,6 +105,7 @@ export const App: React.FC = () => {
         onRunBatch={handleRunBatchStream}
         onReset={handleReset}
         onExport={handleExport}
+        onOpenUpload={() => setIsUploadOpen(true)}
         isProcessing={isProcessing}
         progress={progress}
       />
@@ -138,6 +141,12 @@ export const App: React.FC = () => {
       <TransactionModal
         transaction={selectedTxn}
         onClose={() => setSelectedTxn(null)}
+      />
+
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onSuccess={loadData}
       />
     </div>
   );

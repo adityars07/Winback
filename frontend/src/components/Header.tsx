@@ -1,10 +1,11 @@
 import React from 'react';
-import { Play, RotateCcw, Download, Zap } from 'lucide-react';
+import { Play, RotateCcw, Download, Zap, Upload } from 'lucide-react';
 
 interface HeaderProps {
   onRunBatch: () => void;
   onReset: () => void;
   onExport: () => void;
+  onOpenUpload: () => void;
   isProcessing: boolean;
   progress: { current: number; total: number } | null;
 }
@@ -13,6 +14,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRunBatch,
   onReset,
   onExport,
+  onOpenUpload,
   isProcessing,
   progress,
 }) => {
@@ -33,6 +35,14 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="header-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={onOpenUpload}
+          title="Import CSV or Scan Invoices with AI"
+        >
+          <Upload size={15} /> Ingest Data
+        </button>
+
         <button
           className="btn btn-secondary"
           onClick={onExport}

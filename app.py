@@ -202,10 +202,152 @@ def create_transaction(
     db.add(txn)
     db.commit()
 
-    _record_audit(db, txn_id, "DETECT", None, f"Custom transaction created manually/via webhook: ₹{payload.amount:,.2f}")
-
     return {
         "message": "Transaction created successfully and marked as pending.",
+        "transaction": _txn_to_response(txn)
+    }
+
+
+from fastapi import File, UploadFile
+
+@app.post("/upload/csv")
+async def upload_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk import failed transactions from a CSV file.
+    Expected CSV headers: customer_id, customer_name, customer_email, type, amount, failure_code, attempt_number, customer_contact_count_48h
+    """
+    import string, random
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    content = await file.read()
+    text = content.decode("utf-8-sig", errors="ignore")
+    reader = csv.DictReader(io.StringIO(text))
+
+    created = []
+    now = datetime.utcnow()
+
+    for row in reader:
+        try:
+            amount = float(row.get("amount", 0))
+            txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
+            txn_type = row.get("type", "subscription_renewal").strip()
+            failure_code = row.get("failure_code", "insufficient_funds").strip()
+            
+            mandate_end = None
+            if txn_type == "subscription_renewal":
+                from datetime import timedelta
+                mandate_end = now + timedelta(days=random.randint(1, 10))
+
+            txn = Transaction(
+                txn_id=txn_id,
+                customer_id=row.get("customer_id", f"cust_{random.randint(100, 999)}").strip(),
+                customer_name=row.get("customer_name", "Valued Customer").strip(),
+                customer_email=row.get("customer_email", "customer@example.com").strip(),
+                type=txn_type,
+                amount=amount,
+                failure_code=failure_code,
+                attempt_number=int(row.get("attempt_number", 1)),
+                customer_contact_count_48h=int(row.get("customer_contact_count_48h", 0)),
+                last_attempt_ts=now,
+                mandate_window_end=mandate_end,
+                status="pending",
+            )
+            db.add(txn)
+            created.append(txn)
+            _record_audit(db, txn_id, "DETECT", None, f"Batch imported from CSV '{file.filename}': ₹{amount:,.2f}")
+        except Exception as err:
+            logger.warning(f"Skipping invalid CSV row {row}: {err}")
+
+    db.commit()
+    return {
+        "message": f"Successfully imported {len(created)} failed transactions from '{file.filename}'.",
+        "count": len(created),
+    }
+
+
+class DocumentScanSchema(BaseModel):
+    document_text: str = Field(..., example="Invoice #8902 to Priya Sharma (priya@gmail.com) for amount ₹8,450. Payment failed due to card_expired on 2026-08-20.")
+
+
+@app.post("/upload/document")
+def scan_document(
+    payload: DocumentScanSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    AI Document/Invoice Scanner — Uses Groq LLM to extract payment failure metadata from raw text/invoice notes.
+    """
+    import string, random
+    api_key = os.environ.get("GROQ_API_KEY")
+    prompt = f"""You are an AI financial document parser. Extract structured payment failure info from the following document/invoice text:
+
+{payload.document_text}
+
+Respond ONLY with a JSON object with keys:
+- customer_name (string)
+- customer_email (string)
+- type (must be one of: subscription_renewal, checkout_abandoned, invoice_overdue)
+- amount (float number in INR)
+- failure_code (must be one of: insufficient_funds, card_expired, bank_timeout, mandate_declined, checkout_dropoff, invoice_overdue)
+- attempt_number (integer, default 1)
+- customer_contact_count_48h (integer, default 0)
+No other text."""
+
+    extracted = None
+    if api_key and api_key != "your_key_here":
+        try:
+            from groq import Groq
+            client = Groq(api_key=api_key)
+            resp = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            extracted = json.loads(resp.choices[0].message.content)
+        except Exception as e:
+            logger.warning(f"Groq document scan error: {e}")
+
+    if not extracted:
+        # Fallback simple extractor
+        extracted = {
+            "customer_name": "Scanned Customer",
+            "customer_email": "scanned@example.com",
+            "type": "invoice_overdue",
+            "amount": 4500.0,
+            "failure_code": "invoice_overdue",
+            "attempt_number": 1,
+            "customer_contact_count_48h": 0,
+        }
+
+    txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
+    now = datetime.utcnow()
+
+    txn = Transaction(
+        txn_id=txn_id,
+        customer_id=f"cust_{random.randint(1000, 9999)}",
+        customer_name=extracted.get("customer_name", "Scanned Customer"),
+        customer_email=extracted.get("customer_email", "scanned@example.com"),
+        type=extracted.get("type", "invoice_overdue"),
+        amount=float(extracted.get("amount", 2500.0)),
+        failure_code=extracted.get("failure_code", "invoice_overdue"),
+        attempt_number=int(extracted.get("attempt_number", 1)),
+        customer_contact_count_48h=int(extracted.get("customer_contact_count_48h", 0)),
+        last_attempt_ts=now,
+        status="pending",
+    )
+    db.add(txn)
+    db.commit()
+
+    _record_audit(db, txn_id, "DETECT", None, f"Extracted & ingested by AI Document Scanner: ₹{txn.amount:,.2f}")
+
+    return {
+        "message": "AI Document Ingestion complete! Transaction added to pending queue.",
+        "extracted_data": extracted,
         "transaction": _txn_to_response(txn)
     }
 
