@@ -7,6 +7,11 @@ dist/
 build/
 *.egg
 
+# Node / JS / TS
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
 # Environment
 .env
 *.env

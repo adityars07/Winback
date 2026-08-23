@@ -1,8 +1,8 @@
-# ⚡ Winback — AI Payment Recovery Agent
+# ⚡ Winback — AI Payment Recovery Agent (MVP)
 
 > **Find revenue that's slipping away and win it back.**
 
-Winback is a fintech AI agent that detects failed/at-risk payments, diagnoses why they failed using an LLM, applies deterministic guardrail policies, executes bounded recovery actions (simulated), and logs everything to a transparent audit trail — all visible through a real-time dashboard.
+Winback is a production-grade fintech AI agent that detects failed/at-risk payments, diagnoses root causes using LLMs, enforces deterministic guardrail policies, executes bounded recovery actions, and records immutable audit event trails — all presented in a real-time **React + TypeScript** dashboard.
 
 Built for the **Razorpay Buildathon — AI Revenue Recovery Track**.
 
@@ -10,184 +10,130 @@ Built for the **Razorpay Buildathon — AI Revenue Recovery Track**.
 
 ## 🎯 Problem Statement
 
-Revenue loss rarely happens in one clean step. A payment degrades, a checkout gets abandoned, a subscription fails, or an invoice goes overdue. Most platforms react too slowly or too aggressively — either letting revenue slip or spamming customers beyond compliance limits.
+Payment loss occurs across multiple touchpoints: subscription renewals fail, checkout sessions get abandoned, and B2B invoices fall overdue. Platforms often either react passively (losing revenue) or overly aggressively (violating NPCI mandate windows or customer outreach limits).
 
-**Winback** closes the loop: detect → diagnose → decide → act → audit, with **AI handling the intelligence** and **deterministic guardrails enforcing the rules**.
+**Winback** delivers a closed-loop system: **Detect → Diagnose → Guardrail → Execute → Audit**.
+- **AI (Groq / Llama 3.3 70B)** provides root cause intelligence and action recommendations.
+- **Deterministic Policy Engine** enforces strict compliance rules (NPCI mandate retry windows, contact frequency caps, max retry limits).
 
 ---
 
 ## 🏗️ Architecture
 
-```mermaid
-graph LR
-    A[📦 Synthetic Data<br/>100 transactions] --> B[🔍 Detector<br/>Pull pending batch]
-    B --> C[🧠 Diagnosis Agent<br/>Groq / Llama 3.3 70B]
-    C --> D[🛡️ Policy Engine<br/>Guardrail rules]
-    D --> E[⚡ Executor<br/>Simulated actions]
-    E --> F[📋 Audit Trail<br/>SQLite DB]
-    F --> G[📊 Dashboard<br/>HTML + Chart.js]
-```
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        WINBACK PIPELINE                         │
+│                    WINBACK MVP ARCHITECTURE                     │
 ├─────────┬──────────────┬──────────────┬───────────┬─────────────┤
 │ DETECT  │  DIAGNOSE    │  GUARDRAIL   │  EXECUTE  │   AUDIT     │
-│         │   (LLM)      │  (Rules)     │  (Sim)    │   (DB)      │
-│ Pull    │  Groq API    │  Max retries │  retry    │  SQLite +   │
-│ pending │  Llama 3.3   │  Mandate     │  link     │  Dashboard  │
-│ txns    │  70B         │  window      │  WhatsApp │             │
-│ by ₹    │              │  Contact     │  escalate │             │
-│         │              │  limits      │  mark     │             │
+│         │   (LLM)      │  (Policy)    │  (Sim)    │   (DB & UI) │
+│ Pull    │  Groq API    │  Max Retries │  retry    │  SQLite +   │
+│ pending │  Llama 3.3   │  Mandate     │  link     │  AuditEvents│
+│ txns    │  70B +       │  Window      │  WhatsApp │  React +    │
+│ by ₹    │  Fallback    │  Contact     │  escalate │  TypeScript │
+│ amount  │  Heuristic   │  Limit       │  mark     │  Dashboard  │
 └─────────┴──────────────┴──────────────┴───────────┴─────────────┘
 ```
 
-### Key Design Decisions
+---
 
-| Decision | Rationale |
-|----------|-----------|
-| LLM only for diagnosis | AI recommends, but never directly executes — the policy engine is the gatekeeper |
-| Deterministic guardrails | Compliance rules (NPCI mandate windows, contact limits) must be 100% predictable |
-| Highest-amount-first ordering | Prioritize the biggest revenue-at-risk items in each batch |
-| Simulated execution | No real payment gateway integration — success rates model realistic conversion |
+## 🛡️ Policy Engine Guardrails (100% Deterministic & Unit Tested)
+
+The policy engine is written in pure Python without LLM dependencies to guarantee compliance:
+
+| # | Guardrail Rule | Trigger Condition | Enforcement Action |
+|---|----------------|-------------------|--------------------|
+| 1 | **Max Retry Limit** | `attempt_number > 3` | Override to `mark_unrecoverable` |
+| 2 | **NPCI Mandate Retry Window** | `type == subscription_renewal` AND past `mandate_window_end` AND action is `retry_payment` | Override to `send_payment_link` |
+| 3 | **Outreach Limit** | `customer_contact_count_48h >= 2` AND action is `send_reminder_whatsapp` or `send_payment_link` | Override to `escalate_to_human` |
+| 4 | **Safe Pass-through** | None of the above triggered | Approve recommended action |
 
 ---
 
-## 🛡️ Guardrail Rules
+## 🚀 Key MVP Features
 
-The policy engine enforces three critical rules:
-
-| # | Rule | Trigger Condition | Override Action |
-|---|------|-------------------|-----------------|
-| 1 | **Max Retry Limit** | `attempt_number > 3` | `mark_unrecoverable` |
-| 2 | **NPCI Mandate Window** | `type == subscription_renewal` AND past `mandate_window_end` AND action is `retry_payment` | `send_payment_link` |
-| 3 | **Contact Limit** | `customer_contact_count_48h >= 2` AND action is `send_reminder_whatsapp` or `send_payment_link` | `escalate_to_human` |
-
-If no rule fires → action is approved as-is.
+- **React 18 + TypeScript + Vite Dashboard**: Type-safe components, high-density audit log, interactive metrics, and Chart.js analytics.
+- **Real-time SSE Batch Streaming**: Live progress visualization as transactions are diagnosed & executed (`/run-batch/stream`).
+- **Audit Event Timeline Drawer**: Click any transaction to inspect granular audit logs (`DETECT`, `DIAGNOSE`, `GUARDRAIL`, `EXECUTE`) and visual decision diffs.
+- **Resilient LLM Agent**: Groq API (`llama-3.3-70b-versatile`) with exponential backoff retries and an automatic fallback heuristic so live demos never fail.
+- **CSV Audit Export**: One-click download of all transaction logs (`/export/csv`).
+- **Automated Unit Test Suite**: `pytest` coverage for all guardrails and edge cases.
 
 ---
 
-## 🚀 Setup & Run
+## 💻 Setup & Execution Guide
 
-### Prerequisites
-- Python 3.11+
-- A free Groq API key (get one at [console.groq.com](https://console.groq.com))
-
-### 1. Install Dependencies
+### 1. Install Backend & Frontend Dependencies
 
 ```bash
-cd Winback
+# Python dependencies
 pip install -r requirements.txt
+
+# Frontend dependencies & build
+cd frontend
+npm install
+npm run build
+cd ..
 ```
 
-### 2. Set Environment Variable
+### 2. Set API Key (Optional)
 
-```bash
-# Linux/macOS
-export GROQ_API_KEY=your_groq_api_key_here
-
+```powershell
 # Windows PowerShell
 $env:GROQ_API_KEY="your_groq_api_key_here"
 
-# Or create a .env file:
-cp .env.example .env
-# Then edit .env and paste your key
+# Linux / macOS
+export GROQ_API_KEY="your_groq_api_key_here"
 ```
+*(Note: If `GROQ_API_KEY` is omitted, Winback seamlessly uses its rule-based diagnosis heuristic).*
 
-### 3. Generate Synthetic Data
+### 3. Seed Synthetic Data (150 Transactions)
 
 ```bash
 python generate_data.py
 ```
 
-This creates `winback.db` with 100 synthetic failed transactions across all failure types, with 25%+ designed to trigger guardrail rules.
+### 4. Run Unit Tests
 
-### 4. Start the Backend
+```bash
+python -m pytest tests/ -v
+```
+
+### 5. Launch Backend + Dashboard (Single Command)
 
 ```bash
 uvicorn app:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`.
-
-### 5. Serve the Frontend
-
-```bash
-# From the project root — use any static file server:
-cd frontend
-python -m http.server 3000
-```
-
-Open `http://localhost:3000` in your browser.
-
-### 6. Run the Demo
-
-1. Open the dashboard at `http://localhost:3000`
-2. You'll see 100 pending transactions with their failure codes
-3. Click **"▶ Run Recovery Batch"**
-4. Watch the stats update: recovery rate, guardrails fired, amounts recovered
-5. Scroll through the audit log — look for 🛡️ guardrail badges (yellow = blocked/overridden)
-6. Click **"🔄 Reset Data"** to re-seed and run again
+Open **`http://localhost:8000`** in your browser.
 
 ---
 
-## 📡 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check |
-| `GET` | `/transactions` | All transactions with current state |
-| `GET` | `/summary` | Summary stats (totals, rates, counts) |
-| `POST` | `/run-batch` | Run the full recovery pipeline on pending transactions |
-| `POST` | `/reset` | Re-seed database with fresh synthetic data |
-
----
-
-## 📂 Project Structure
+## 📁 Repository Structure
 
 ```
 Winback/
-├── app.py                  # FastAPI backend + orchestrator endpoint
-├── models.py               # SQLAlchemy models + DB setup
-├── generate_data.py        # Synthetic data generator (100 txns)
-├── detector.py             # Step 2: Pull pending batch
-├── diagnosis.py            # Step 3: LLM diagnosis via Groq
-├── policy.py               # Step 4: Guardrail / policy engine
-├── executor.py             # Step 5: Simulated action executor
-├── requirements.txt        # Python dependencies
-├── .env.example            # Environment variable template
-├── README.md               # This file
-└── frontend/
-    └── index.html          # Single-page dashboard (HTML + CSS + JS + Chart.js)
+├── app.py                  # FastAPI backend, SSE stream, CSV export, Static file server
+├── models.py               # SQLAlchemy ORM (Transaction & AuditEvent tables)
+├── generate_data.py        # Synthetic generator (150 realistic Indian transaction records)
+├── detector.py             # Pending failure batch detector
+├── diagnosis.py            # Groq LLM diagnosis agent + retry/fallback
+├── policy.py               # Deterministic policy engine
+├── executor.py             # Action executor (simulated recovery conversion)
+├── tests/
+│   └── test_policy.py      # Pytest unit test suite for policy guardrails
+├── requirements.txt        # Backend dependencies (fastapi, uvicorn, sqlalchemy, groq, pytest)
+├── frontend/               # React 18 + TypeScript + Vite Dashboard
+│   ├── src/
+│   │   ├── components/     # Header, KpiCards, PipelineFlow, AnalyticsCharts, AuditTrailTable, TransactionModal
+│   │   ├── types.ts        # TypeScript data contracts
+│   │   ├── styles.css      # Glassmorphism dark-mode styles
+│   │   ├── App.tsx         # Main React state & SSE listener
+│   │   └── main.tsx        # React entry point
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
+└── README.md
 ```
-
----
-
-## 🔮 What We'd Add With More Time
-
-- **Real payment gateway webhooks** — integrate with Razorpay/Stripe for actual retry execution
-- **More failure types** — UPI declines, NEFT timeouts, international card failures
-- **Multi-language reminders** — WhatsApp messages in Hindi, Tamil, etc.
-- **Webhook-driven triggers** — react to payment failures in real-time instead of batch mode
-- **Customer risk scoring** — ML model to predict recovery likelihood per customer
-- **A/B testing framework** — compare recovery strategies (e.g., WhatsApp vs SMS vs email)
-- **Role-based access control** — separate dashboards for ops, finance, and compliance teams
-- **Retry scheduling optimization** — use ML to find the optimal time-of-day for retries
-- **Configurable guardrails** — admin UI to adjust policy rules without code changes
-- **Promise-to-pay tracking** — let customers commit to a future payment date
-- **Export & reporting** — CSV/PDF export of audit trails for compliance reporting
-
----
-
-## 🧰 Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Backend | Python 3.11, FastAPI |
-| Database | SQLite (via SQLAlchemy) |
-| LLM | Groq API — Llama 3.3 70B Versatile |
-| Frontend | HTML, CSS, JavaScript, Chart.js |
-| Fonts | Inter, JetBrains Mono (Google Fonts) |
 
 ---
 
