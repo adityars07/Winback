@@ -141,6 +141,20 @@ def health():
     return {"service": "Winback", "status": "healthy", "version": "2.0.0"}
 
 
+from pydantic import BaseModel, Field
+
+class CreateTransactionSchema(BaseModel):
+    customer_id: str = Field(..., example="cust_1042")
+    customer_name: str = Field(..., example="Rahul Sharma")
+    customer_email: str = Field(..., example="rahul@example.com")
+    type: str = Field(..., example="subscription_renewal") # subscription_renewal, checkout_abandoned, invoice_overdue
+    amount: float = Field(..., example=1499.0)
+    failure_code: str = Field(..., example="insufficient_funds") # insufficient_funds, card_expired, bank_timeout, mandate_declined, checkout_dropoff, invoice_overdue
+    attempt_number: int = Field(1, example=1)
+    customer_contact_count_48h: int = Field(0, example=0)
+    mandate_window_end_days: float | None = Field(None, example=5.0)  # days from now
+
+
 @app.get("/transactions")
 def list_transactions(
     status: str | None = Query(None),
@@ -153,6 +167,46 @@ def list_transactions(
     return {
         "transactions": [_txn_to_response(t) for t in txns],
         "total": len(txns),
+    }
+
+
+@app.post("/transactions")
+def create_transaction(
+    payload: CreateTransactionSchema,
+    db: Session = Depends(get_db)
+):
+    """Add a new custom failed transaction to Winback (e.g. from Razorpay webhook)."""
+    import string, random
+    txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
+    now = datetime.utcnow()
+
+    mandate_end = None
+    if payload.mandate_window_end_days is not None:
+        from datetime import timedelta
+        mandate_end = now + timedelta(days=payload.mandate_window_end_days)
+
+    txn = Transaction(
+        txn_id=txn_id,
+        customer_id=payload.customer_id,
+        customer_name=payload.customer_name,
+        customer_email=payload.customer_email,
+        type=payload.type,
+        amount=payload.amount,
+        failure_code=payload.failure_code,
+        attempt_number=payload.attempt_number,
+        last_attempt_ts=now,
+        mandate_window_end=mandate_end,
+        customer_contact_count_48h=payload.customer_contact_count_48h,
+        status="pending",
+    )
+    db.add(txn)
+    db.commit()
+
+    _record_audit(db, txn_id, "DETECT", None, f"Custom transaction created manually/via webhook: ₹{payload.amount:,.2f}")
+
+    return {
+        "message": "Transaction created successfully and marked as pending.",
+        "transaction": _txn_to_response(txn)
     }
 
 
