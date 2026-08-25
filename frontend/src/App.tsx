@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header } from './components/Header';
-import { KpiCards } from './components/KpiCards';
-import { PipelineFlow } from './components/PipelineFlow';
-import { AnalyticsCharts } from './components/AnalyticsCharts';
-import { AuditTrailTable } from './components/AuditTrailTable';
+import { Navbar } from './components/Navbar';
+import { HeroSection } from './components/HeroSection';
+import { StatsBar } from './components/StatsBar';
+import { OneViewSection } from './components/OneViewSection';
+import { ComparisonSection } from './components/ComparisonSection';
+import { RecoveryLadderSection } from './components/RecoveryLadderSection';
+import { TestimonialsSection } from './components/TestimonialsSection';
+import { LiveConsoleSection } from './components/LiveConsoleSection';
+import { FooterSection } from './components/FooterSection';
 import { TransactionModal } from './components/TransactionModal';
 import { UploadModal } from './components/UploadModal';
 import { Transaction, SummaryStats } from './types';
@@ -16,6 +20,7 @@ export const App: React.FC = () => {
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [activeView, setActiveView] = useState<'landing' | 'console'>('landing');
 
   const loadData = useCallback(async () => {
     try {
@@ -52,7 +57,7 @@ export const App: React.FC = () => {
           setProgress({ current: 0, total: data.total });
         } else if (data.type === 'progress') {
           setProgress({ current: data.current, total: data.total });
-          // Update the transaction in local state in real-time
+          // Update transaction in real-time
           setTransactions((prev) => {
             const index = prev.findIndex((t) => t.txn_id === data.txn.txn_id);
             if (index !== -1) {
@@ -84,7 +89,7 @@ export const App: React.FC = () => {
   };
 
   const handleReset = async () => {
-    if (!window.confirm('Reset all transactions back to fresh pending state?')) return;
+    if (!window.confirm('Reset all demo transactions back to fresh pending state?')) return;
     try {
       const res = await fetch('/reset', { method: 'POST' });
       if (res.ok) {
@@ -99,45 +104,79 @@ export const App: React.FC = () => {
     window.open('/export/csv', '_blank');
   };
 
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
-    <div className="app-container">
-      <Header
+    <div className="page-wrapper">
+      {/* Editorial Navbar */}
+      <Navbar
+        onRunBatch={handleRunBatchStream}
+        onOpenUpload={() => setIsUploadOpen(true)}
+        onScrollToSection={scrollToSection}
+        isProcessing={isProcessing}
+        activeView={activeView}
+        setActiveView={setActiveView}
+      />
+
+      {/* Hero Section */}
+      <HeroSection
+        summary={summary}
+        onRunBatch={handleRunBatchStream}
+        onScrollToSection={scrollToSection}
+        onOpenConsole={() => {
+          setActiveView('console');
+          scrollToSection('console');
+        }}
+        isProcessing={isProcessing}
+      />
+
+      {/* Stats Ribbon */}
+      <StatsBar />
+
+      {/* One View Section */}
+      <OneViewSection
+        onOpenConsole={() => {
+          setActiveView('console');
+          scrollToSection('console');
+        }}
+      />
+
+      {/* Comparison Section: Legacy Dunning vs Winback */}
+      <ComparisonSection />
+
+      {/* Recovery Ladder Section + Interactive ROI Calculator */}
+      <RecoveryLadderSection
+        onOpenConsole={() => {
+          setActiveView('console');
+          scrollToSection('console');
+        }}
+      />
+
+      {/* Customer Stories & Testimonials */}
+      <TestimonialsSection />
+
+      {/* Live Recovery Console & Sandbox */}
+      <LiveConsoleSection
+        summary={summary}
+        transactions={transactions}
         onRunBatch={handleRunBatchStream}
         onReset={handleReset}
         onExport={handleExport}
         onOpenUpload={() => setIsUploadOpen(true)}
+        onSelectTxn={(txn) => setSelectedTxn(txn)}
         isProcessing={isProcessing}
         progress={progress}
       />
 
-      {isProcessing && progress && (
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>
-            <span>Processing Recovery Batch...</span>
-            <span>{progress.current} / {progress.total} transactions diagnosed & executed</span>
-          </div>
-          <div className="progress-bar-container">
-            <div
-              className="progress-bar-fill"
-              style={{
-                width: progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '0%',
-              }}
-            />
-          </div>
-        </div>
-      )}
+      {/* Regulatory Footer */}
+      <FooterSection />
 
-      <KpiCards summary={summary} />
-
-      <PipelineFlow />
-
-      <AnalyticsCharts summary={summary} transactions={transactions} />
-
-      <AuditTrailTable
-        transactions={transactions}
-        onSelectTxn={(txn) => setSelectedTxn(txn)}
-      />
-
+      {/* Modals & Drawers */}
       <TransactionModal
         transaction={selectedTxn}
         onClose={() => setSelectedTxn(null)}

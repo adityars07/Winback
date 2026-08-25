@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload, FileText, Sparkles, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Upload, FileText, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -81,41 +81,40 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="dialog-overlay" onClick={onClose}>
       <div
-        className="modal-drawer"
-        style={{ width: '560px' }}
+        className="dialog-box-luxury"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
+        <div className="modal-header-luxury">
           <div>
-            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>
-              Data Ingestion Suite
+            <div style={{ fontSize: '11px', color: '#00E599', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}>
+              ● Data Ingestion Suite
             </div>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#f1f5f9' }}>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: '#FFFFFF', marginTop: '2px' }}>
               Import Failed Payments
             </div>
           </div>
-          <button className="close-btn" onClick={onClose}>
-            <X size={20} />
+          <button className="close-btn-luxury" onClick={onClose}>
+            <X size={18} />
           </button>
         </div>
 
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid #2a3548', paddingBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '14px' }}>
           <button
-            className={`btn ${activeTab === 'csv' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn-console-action ${activeTab === 'csv' ? 'btn-console-primary' : ''}`}
             onClick={() => setActiveTab('csv')}
-            style={{ fontSize: '12px', padding: '8px 14px' }}
           >
-            <Upload size={14} /> Bulk CSV Import
+            <Upload size={13} />
+            <span>Bulk CSV Ingestion</span>
           </button>
           <button
-            className={`btn ${activeTab === 'ai' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn-console-action ${activeTab === 'ai' ? 'btn-console-primary' : ''}`}
             onClick={() => setActiveTab('ai')}
-            style={{ fontSize: '12px', padding: '8px 14px' }}
           >
-            <Sparkles size={14} /> AI Document Scanner
+            <Sparkles size={13} />
+            <span>AI Invoice / Receipt Scanner</span>
           </button>
         </div>
 
@@ -125,16 +124,17 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               fontSize: '12px',
               padding: '10px 14px',
               borderRadius: '8px',
-              marginBottom: '16px',
-              background: msg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-              color: msg.type === 'success' ? '#10b981' : '#ef4444',
+              marginBottom: '18px',
+              background: msg.type === 'success' ? 'rgba(0, 229, 153, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+              color: msg.type === 'success' ? '#00E599' : '#FB7185',
+              border: `1px solid ${msg.type === 'success' ? 'rgba(0, 229, 153, 0.35)' : 'rgba(244, 63, 94, 0.35)'}`,
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
             }}
           >
-            {msg.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-            {msg.text}
+            {msg.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            <span>{msg.text}</span>
           </div>
         )}
 
@@ -143,22 +143,23 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           <form onSubmit={handleCsvSubmit}>
             <div
               style={{
-                border: '2px dashed #2a3548',
-                borderRadius: '12px',
+                border: '2px dashed rgba(0, 229, 153, 0.3)',
+                borderRadius: '14px',
                 padding: '32px',
                 textAlign: 'center',
-                background: 'rgba(26, 34, 51, 0.5)',
+                background: 'rgba(0, 0, 0, 0.25)',
                 marginBottom: '20px',
                 cursor: 'pointer',
+                transition: 'border-color 0.2s',
               }}
               onClick={() => document.getElementById('csvFileInput')?.click()}
             >
-              <FileText size={36} color="#3b82f6" style={{ marginBottom: '12px' }} />
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9' }}>
-                {file ? file.name : 'Click to select CSV file'}
+              <FileText size={38} color="#00E599" style={{ marginBottom: '12px' }} />
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#FFFFFF' }}>
+                {file ? file.name : 'Click or drop CSV file here'}
               </div>
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                Supports `.csv` files with payment failure logs
+              <div style={{ fontSize: '11.5px', color: '#6B8077', marginTop: '4px' }}>
+                Standard gateway export format with amount and failure reason
               </div>
               <input
                 id="csvFileInput"
@@ -169,12 +170,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               />
             </div>
 
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '20px', background: '#131b2b', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#A3B8B0', marginBottom: '20px', background: 'rgba(0, 0, 0, 0.3)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <strong>Expected CSV Headers:</strong> customer_id, customer_name, customer_email, type, amount, failure_code, attempt_number, customer_contact_count_48h
             </div>
 
-            <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={!file || loading}>
-              {loading ? 'Uploading & Parsing...' : 'Import CSV Records'}
+            <button
+              className="btn-console-action btn-console-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+              disabled={!file || loading}
+            >
+              {loading ? 'Ingesting & Recording Audit Events...' : 'Upload & Parse Batch'}
             </button>
           </form>
         )}
@@ -182,18 +187,18 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         {/* Tab 2: AI Document Scanner */}
         {activeTab === 'ai' && (
           <form onSubmit={handleAiScanSubmit}>
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
-              Paste raw invoice text, receipt notes, or failure log details below:
+            <div style={{ fontSize: '12px', color: '#A3B8B0', marginBottom: '8px' }}>
+              Paste raw invoice text, receipt notes, or failure log notes:
             </div>
             <textarea
               style={{
                 width: '100%',
-                height: '160px',
-                background: '#131b2b',
-                border: '1px solid #2a3548',
-                borderRadius: '8px',
-                padding: '12px',
-                color: '#f1f5f9',
+                height: '150px',
+                background: 'rgba(0, 0, 0, 0.3)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '10px',
+                padding: '14px',
+                color: '#FFFFFF',
                 fontFamily: 'monospace',
                 fontSize: '12px',
                 outline: 'none',
@@ -207,9 +212,13 @@ Payment failed due to card_expired on 2026-08-20.`}
               onChange={(e) => setDocumentText(e.target.value)}
             />
 
-            <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={!documentText.trim() || loading}>
+            <button
+              className="btn-console-action btn-console-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+              disabled={!documentText.trim() || loading}
+            >
               <Sparkles size={15} />
-              {loading ? 'Scanning via Groq LLM...' : 'Extract & Ingest with AI'}
+              <span>{loading ? 'Extracting via Groq Llama 3.3 70B...' : 'Extract & Ingest with AI'}</span>
             </button>
           </form>
         )}

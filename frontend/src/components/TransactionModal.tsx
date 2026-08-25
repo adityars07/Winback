@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Shield, ArrowRight, CheckCircle, Clock } from 'lucide-react';
+import { X, ShieldAlert, ArrowRight, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
 import { Transaction, AuditEvent } from '../types';
 
 interface TransactionModalProps {
@@ -33,79 +33,74 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-drawer" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+      <div className="modal-drawer-luxury" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header-luxury">
           <div>
-            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>
-              Transaction Audit Trace
+            <div style={{ fontSize: '11px', color: '#00E599', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}>
+              ● Granular Audit Trace
             </div>
-            <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'monospace', color: '#f1f5f9' }}>
+            <div style={{ fontSize: '20px', fontWeight: 800, fontFamily: 'monospace', color: '#FFFFFF', marginTop: '2px' }}>
               {transaction.txn_id}
             </div>
           </div>
-          <button className="close-btn" onClick={onClose}>
-            <X size={20} />
+          <button className="close-btn-luxury" onClick={onClose}>
+            <X size={18} />
           </button>
         </div>
 
-        {/* Customer & Payment Meta */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-          <div className="detail-group">
-            <div className="detail-label">Customer</div>
-            <div className="detail-val">{transaction.customer_name}</div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>{transaction.customer_email}</div>
+        {/* Customer & Payment Meta Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Customer</div>
+            <div className="detail-val-luxury">{transaction.customer_name}</div>
+            <div style={{ fontSize: '11px', color: '#6B8077' }}>{transaction.customer_email}</div>
           </div>
 
-          <div className="detail-group">
-            <div className="detail-label">Amount at Risk</div>
-            <div className="detail-val" style={{ color: '#3b82f6', fontFamily: 'monospace', fontSize: '16px' }}>
-              ₹{transaction.amount.toLocaleString()}
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Amount at Risk</div>
+            <div className="detail-val-luxury" style={{ color: '#00E599', fontFamily: 'monospace', fontSize: '17px' }}>
+              ₹{transaction.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
           </div>
 
-          <div className="detail-group">
-            <div className="detail-label">Category / Type</div>
-            <div className="detail-val">{transaction.type}</div>
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Category / Type</div>
+            <div className="detail-val-luxury">{transaction.type.replace(/_/g, ' ')}</div>
           </div>
 
-          <div className="detail-group">
-            <div className="detail-label">Failure Code</div>
-            <div className="detail-val" style={{ color: '#ef4444' }}>{transaction.failure_code}</div>
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Failure Code</div>
+            <div className="detail-val-luxury" style={{ color: '#FB7185', fontFamily: 'monospace' }}>
+              {transaction.failure_code}
+            </div>
           </div>
 
-          <div className="detail-group">
-            <div className="detail-label">Retry Attempts</div>
-            <div className="detail-val">Attempt #{transaction.attempt_number}</div>
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Retry Count</div>
+            <div className="detail-val-luxury">Attempt #{transaction.attempt_number}</div>
           </div>
 
-          <div className="detail-group">
-            <div className="detail-label">Outreach 48h</div>
-            <div className="detail-val">{transaction.customer_contact_count_48h} contacts</div>
+          <div className="detail-group-luxury">
+            <div className="detail-label-luxury">Outreach (48h Buffer)</div>
+            <div className="detail-val-luxury">{transaction.customer_contact_count_48h} contacts</div>
           </div>
         </div>
 
         {/* Action Decision Diff */}
-        <div
-          style={{
-            background: 'rgba(26, 34, 51, 0.8)',
-            border: '1px solid #2a3548',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '24px',
-          }}
-        >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', marginBottom: '12px' }}>
-            DECISION & GUARDRAIL DIFF
+        <div className="decision-diff-box">
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#A3B8B0', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '12px' }}>
+            Decision & Guardrail Diff
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>LLM RECOMMENDED</div>
+              <div style={{ fontSize: '10px', color: '#6B8077', textTransform: 'uppercase' }}>LLM Recommended</div>
               <div
                 style={{
                   fontFamily: 'monospace',
-                  fontSize: '12px',
-                  color: '#3b82f6',
+                  fontSize: '12.5px',
+                  color: '#38BDF8',
+                  marginTop: '2px',
                   textDecoration: isOverridden ? 'line-through' : 'none',
                 }}
               >
@@ -113,11 +108,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               </div>
             </div>
 
-            <ArrowRight size={16} color="#64748b" />
+            <ArrowRight size={16} color="#6B8077" />
 
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>FINAL EXECUTED</div>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#10b981', fontWeight: 700 }}>
+              <div style={{ fontSize: '10px', color: '#6B8077', textTransform: 'uppercase' }}>Final Action Executed</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '12.5px', color: '#00E599', fontWeight: 700, marginTop: '2px' }}>
                 {transaction.final_action_taken || 'N/A'}
               </div>
             </div>
@@ -126,41 +121,42 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {transaction.guardrail_notes && (
             <div
               style={{
-                fontSize: '11px',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                background: isBlocked ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.1)',
-                color: isBlocked ? '#f59e0b' : '#10b981',
+                fontSize: '11.5px',
+                padding: '9px 12px',
+                borderRadius: '8px',
+                background: isBlocked ? 'rgba(245, 158, 11, 0.14)' : 'rgba(0, 229, 153, 0.12)',
+                color: isBlocked ? '#FBBF24' : '#00E599',
+                border: `1px solid ${isBlocked ? 'rgba(245, 158, 11, 0.3)' : 'rgba(0, 229, 153, 0.3)'}`,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '8px',
               }}
             >
-              {isBlocked ? <Shield size={14} /> : <CheckCircle size={14} />}
-              {transaction.guardrail_notes}
+              {isBlocked ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />}
+              <span>{transaction.guardrail_notes}</span>
             </div>
           )}
         </div>
 
         {/* Audit Event Timeline */}
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9', marginBottom: '12px' }}>
-            📋 Audit Event Timeline
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#FFFFFF', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📋 Granular Event Trace ({events.length} events)</span>
           </div>
 
           {loading ? (
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Loading timeline events...</div>
+            <div style={{ fontSize: '12px', color: '#6B8077' }}>Loading timeline events...</div>
           ) : events.length === 0 ? (
-            <div style={{ fontSize: '12px', color: '#64748b' }}>
-              No granular events recorded yet. Run a batch to process this transaction.
+            <div style={{ fontSize: '12px', color: '#6B8077', background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '8px' }}>
+              No granular events recorded yet. Run a recovery batch to process this transaction.
             </div>
           ) : (
-            <div className="timeline">
+            <div className="timeline-luxury">
               {events.map((e) => (
-                <div key={e.id} className="timeline-item">
-                  <div className="timeline-stage">{e.stage}</div>
-                  <div className="timeline-desc">{e.details}</div>
-                  <div className="timeline-time">
+                <div key={e.id} className="timeline-item-luxury">
+                  <div className="timeline-stage-luxury">{e.stage}</div>
+                  <div className="timeline-desc-luxury">{e.details}</div>
+                  <div className="timeline-time-luxury">
                     <Clock size={10} style={{ display: 'inline', marginRight: '4px' }} />
                     {new Date(e.timestamp).toLocaleTimeString()}
                   </div>

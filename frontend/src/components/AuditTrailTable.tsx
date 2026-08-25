@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface AuditTrailTableProps {
@@ -82,16 +82,18 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
   const paginated = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   return (
-    <div className="table-section">
-      <div className="table-header">
-        <div className="section-title">
-          📋 Audit Trail & Pipeline Execution Log
-          <span className="count-badge">{filtered.length}</span>
+    <div className="audit-table-card-luxury">
+      {/* Top Filter Bar */}
+      <div className="table-top-bar-luxury">
+        <div className="table-top-title-luxury">
+          <ListFilter size={18} color="#00E599" />
+          <span>Audit Trail & Execution Log</span>
+          <span className="table-count-pill">{filtered.length} records</span>
         </div>
 
-        <div className="table-controls">
+        <div className="table-controls-luxury">
           <select
-            className="filter-select"
+            className="filter-select-obsidian"
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -106,167 +108,159 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
           </select>
 
           <select
-            className="filter-select"
+            className="filter-select-obsidian"
             value={guardrailFilter}
             onChange={(e) => {
               setGuardrailFilter(e.target.value);
               setPage(1);
             }}
           >
-            <option value="all">All Actions</option>
-            <option value="blocked">Guardrail Blocked (Overridden)</option>
-            <option value="approved">Approved</option>
+            <option value="all">All Policies</option>
+            <option value="blocked">Guardrail Blocked (Overridden ⛔)</option>
+            <option value="approved">Approved Pass-Through (✅)</option>
           </select>
 
-          <div style={{ position: 'relative' }}>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search ID, customer, email..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
+          <input
+            type="text"
+            className="search-input-obsidian"
+            placeholder="Search txn, customer, email..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
         </div>
       </div>
 
-      <div className="table-container">
-        <div className="table-scroll">
-          <table>
-            <thead>
+      {/* Table Content */}
+      <div className="table-scroll-luxury">
+        <table className="obsidian-table">
+          <thead>
+            <tr>
+              <th onClick={() => handleSort('txn_id')}>Txn ID ↕</th>
+              <th onClick={() => handleSort('customer_name')}>Customer ↕</th>
+              <th onClick={() => handleSort('amount')}>Amount ↕</th>
+              <th onClick={() => handleSort('failure_code')}>Failure Code ↕</th>
+              <th>Diagnosis & Recommendation</th>
+              <th>Guardrail Policy Enforcement</th>
+              <th onClick={() => handleSort('final_action_taken')}>Final Action ↕</th>
+              <th onClick={() => handleSort('status')}>Status ↕</th>
+              <th onClick={() => handleSort('recovered_amount')}>Recovered ↕</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginated.length === 0 ? (
               <tr>
-                <th onClick={() => handleSort('txn_id')}>Txn ID ↕</th>
-                <th onClick={() => handleSort('customer_name')}>Customer ↕</th>
-                <th onClick={() => handleSort('amount')}>Amount ↕</th>
-                <th onClick={() => handleSort('failure_code')}>Failure Code ↕</th>
-                <th>Diagnosis & Recommendation</th>
-                <th>Guardrail Policy Note</th>
-                <th onClick={() => handleSort('final_action_taken')}>Final Action ↕</th>
-                <th onClick={() => handleSort('status')}>Status ↕</th>
-                <th onClick={() => handleSort('recovered_amount')}>Recovered ↕</th>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '48px', color: '#6B8077' }}>
+                  No matching transaction records found.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {paginated.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                    No matching transactions found.
-                  </td>
-                </tr>
-              ) : (
-                paginated.map((t) => {
-                  const isBlocked = t.guardrail_notes && t.guardrail_notes.includes('⛔');
-                  const isOverridden = isBlocked && t.recommended_action !== t.final_action_taken;
-                  const rowClass = `status-${t.status}`;
+            ) : (
+              paginated.map((t) => {
+                const isBlocked = t.guardrail_notes && t.guardrail_notes.includes('⛔');
+                const isOverridden = isBlocked && t.recommended_action !== t.final_action_taken;
+                const rowClass = `status-${t.status}`;
 
-                  return (
-                    <tr
-                      key={t.txn_id}
-                      className={rowClass}
-                      onClick={() => onSelectTxn(t)}
-                      title="Click to view detailed timeline & audit events"
-                    >
-                      <td>
-                        <span className="mono">{t.txn_id}</span>
-                      </td>
+                return (
+                  <tr
+                    key={t.txn_id}
+                    className={rowClass}
+                    onClick={() => onSelectTxn(t)}
+                    title="Click to inspect full audit event timeline & decision trace"
+                  >
+                    <td>
+                      <span className="mono-hash">{t.txn_id}</span>
+                    </td>
 
-                      <td>
-                        <div style={{ fontWeight: 600, color: '#f1f5f9' }}>
-                          {t.customer_name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>
-                          {t.customer_email}
-                        </div>
-                      </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: '#FFFFFF' }}>
+                        {t.customer_name}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#6B8077' }}>
+                        {t.customer_email}
+                      </div>
+                    </td>
 
-                      <td>
-                        <span className="amount">₹{formatINR(t.amount)}</span>
-                      </td>
+                    <td>
+                      <span className="mono-amount">₹{formatINR(t.amount)}</span>
+                    </td>
 
-                      <td>
-                        <span className="failure-tag">{t.failure_code}</span>
-                      </td>
+                    <td>
+                      <span className="tag-failure">{t.failure_code}</span>
+                    </td>
 
-                      <td>
-                        <div style={{ fontSize: '11px', color: '#94a3b8', maxWidth: '240px' }}>
-                          {t.diagnosis || 'Pending diagnosis'}
-                        </div>
-                        {t.recommended_action && (
-                          <div style={{ marginTop: '4px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            <span className={`action-badge ${isOverridden ? 'action-overridden' : ''}`}>
-                              {t.recommended_action}
-                            </span>
-                            {t.confidence && (
-                              <span className={`confidence-tag confidence-${t.confidence}`}>
-                                {t.confidence}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      <td>
-                        {t.guardrail_notes ? (
-                          <span className={`guardrail-badge ${isBlocked ? '' : 'approved'}`}>
-                            {isBlocked ? <Shield size={12} /> : <CheckCircle size={12} />}
-                            {t.guardrail_notes.replace(/[⛔✅]/g, '').trim()}
+                    <td>
+                      <div style={{ fontSize: '11.5px', color: '#A3B8B0', maxWidth: '240px' }}>
+                        {t.diagnosis || 'Pending diagnosis'}
+                      </div>
+                      {t.recommended_action && (
+                        <div style={{ marginTop: '5px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span className={`tag-action ${isOverridden ? 'tag-action-strikethrough' : ''}`}>
+                            {t.recommended_action}
                           </span>
-                        ) : (
-                          <span style={{ color: '#64748b' }}>—</span>
-                        )}
-                      </td>
+                        </div>
+                      )}
+                    </td>
 
-                      <td>
-                        {t.final_action_taken ? (
-                          <span className="action-badge">{t.final_action_taken}</span>
-                        ) : (
-                          <span style={{ color: '#64748b' }}>—</span>
-                        )}
-                      </td>
-
-                      <td>
-                        <span className={`status-badge ${t.status}`}>
-                          {t.status}
+                    <td>
+                      {t.guardrail_notes ? (
+                        <span className={`tag-guardrail ${isBlocked ? '' : 'approved'}`}>
+                          {isBlocked ? <ShieldAlert size={12} /> : <CheckCircle size={12} />}
+                          {t.guardrail_notes.replace(/[⛔✅]/g, '').trim()}
                         </span>
-                      </td>
+                      ) : (
+                        <span style={{ color: '#6B8077' }}>—</span>
+                      )}
+                    </td>
 
-                      <td>
-                        <span className={`amount ${t.recovered_amount > 0 ? 'recovered-amt' : ''}`}>
-                          {t.recovered_amount > 0 ? `₹${formatINR(t.recovered_amount)}` : '—'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                    <td>
+                      {t.final_action_taken ? (
+                        <span className="tag-action">{t.final_action_taken}</span>
+                      ) : (
+                        <span style={{ color: '#6B8077' }}>—</span>
+                      )}
+                    </td>
+
+                    <td>
+                      <span className={`status-badge-obsidian ${t.status}`}>
+                        {t.status}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span className={`mono-amount ${t.recovered_amount > 0 ? 'recovered-glow' : ''}`}>
+                        {t.recovered_amount > 0 ? `₹${formatINR(t.recovered_amount)}` : '—'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination Footer */}
+      <div className="pagination-luxury">
+        <div>
+          Showing Page {page} of {totalPages} ({sorted.length} total transactions)
         </div>
-
-        {/* Pagination Footer */}
-        <div className="pagination">
-          <div style={{ fontSize: '12px', color: '#64748b' }}>
-            Showing Page {page} of {totalPages} ({sorted.length} total items)
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              className="page-btn"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-            <button
-              className="page-btn"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-            >
-              Next <ChevronRight size={14} />
-            </button>
-          </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="page-btn-luxury"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          <button
+            className="page-btn-luxury"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+          >
+            Next <ChevronRight size={14} />
+          </button>
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
 } from 'chart.js';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import { SummaryStats, Transaction } from '../types';
+import { PieChart, BarChart3, Layers } from 'lucide-react';
 
 ChartJS.register(
   ArcElement,
@@ -44,10 +45,16 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
           counts.pending || 0,
         ],
         backgroundColor: [
-          'rgba(16, 185, 129, 0.8)',
-          'rgba(245, 158, 11, 0.8)',
-          'rgba(239, 68, 68, 0.8)',
-          'rgba(100, 116, 139, 0.5)',
+          '#00E599',
+          '#F59E0B',
+          '#F43F5E',
+          '#475569',
+        ],
+        hoverBackgroundColor: [
+          '#34D399',
+          '#FBBF24',
+          '#FB7185',
+          '#64748B',
         ],
         borderWidth: 0,
       },
@@ -73,18 +80,18 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
       {
         label: 'Total Failures',
         data: failureLabels.map((l) => failureMap[l] || 0),
-        backgroundColor: 'rgba(59, 130, 246, 0.4)',
-        borderColor: 'rgba(59, 130, 246, 0.8)',
+        backgroundColor: 'rgba(56, 189, 248, 0.35)',
+        borderColor: '#38BDF8',
         borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 6,
       },
       {
         label: 'Recovered',
         data: failureLabels.map((l) => recoveryMap[l] || 0),
-        backgroundColor: 'rgba(16, 185, 129, 0.6)',
-        borderColor: 'rgba(16, 185, 129, 0.9)',
+        backgroundColor: 'rgba(0, 229, 153, 0.65)',
+        borderColor: '#00E599',
         borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 6,
       },
     ],
   };
@@ -98,18 +105,18 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
       {
         label: 'Total ₹ at Risk',
         data: typeLabels.map((t) => typeMap[t]?.total || 0),
-        backgroundColor: 'rgba(249, 115, 22, 0.4)',
-        borderColor: 'rgba(249, 115, 22, 0.8)',
+        backgroundColor: 'rgba(245, 158, 11, 0.35)',
+        borderColor: '#F59E0B',
         borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 6,
       },
       {
         label: 'Recovered ₹',
         data: typeLabels.map((t) => typeMap[t]?.recovered || 0),
-        backgroundColor: 'rgba(16, 185, 129, 0.6)',
-        borderColor: 'rgba(16, 185, 129, 0.9)',
+        backgroundColor: 'rgba(0, 229, 153, 0.65)',
+        borderColor: '#00E599',
         borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 6,
       },
     ],
   };
@@ -120,33 +127,64 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     plugins: {
       legend: {
         labels: {
-          color: '#94a3b8',
-          font: { family: "'Inter', sans-serif", size: 11 },
+          color: '#A3B8B0',
+          font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
           usePointStyle: true,
+          boxWidth: 8,
         },
+      },
+      tooltip: {
+        backgroundColor: '#04140F',
+        borderColor: 'rgba(16, 185, 129, 0.3)',
+        borderWidth: 1,
+        titleColor: '#FFFFFF',
+        bodyColor: '#A3B8B0',
+        padding: 10,
+        cornerRadius: 8,
       },
     },
     scales: {
-      x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
-      y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(42, 53, 72, 0.4)' } },
+      x: {
+        ticks: { color: '#6B8077', font: { size: 10 } },
+        grid: { display: false },
+      },
+      y: {
+        ticks: { color: '#6B8077', font: { size: 10 } },
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+      },
     },
   };
 
   return (
-    <div className="charts-grid">
-      <div className="chart-card">
-        <h3>📊 Transaction Status Breakdown</h3>
-        <div className="chart-wrapper">
+    <div className="charts-grid-luxury">
+      <div className="chart-card-luxury">
+        <h3>
+          <PieChart size={14} color="#00E599" />
+          <span>Status Distribution</span>
+        </h3>
+        <div className="chart-wrapper-luxury">
           <Doughnut
             data={statusData}
             options={{
               responsive: true,
               maintainAspectRatio: false,
-              cutout: '65%',
+              cutout: '70%',
               plugins: {
                 legend: {
                   position: 'right',
-                  labels: { color: '#94a3b8', font: { size: 11 }, usePointStyle: true },
+                  labels: {
+                    color: '#A3B8B0',
+                    font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
+                    usePointStyle: true,
+                    boxWidth: 8,
+                  },
+                },
+                tooltip: {
+                  backgroundColor: '#04140F',
+                  borderColor: 'rgba(16, 185, 129, 0.3)',
+                  borderWidth: 1,
+                  padding: 10,
+                  cornerRadius: 8,
                 },
               },
             }}
@@ -154,16 +192,22 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
         </div>
       </div>
 
-      <div className="chart-card">
-        <h3>📈 Recovery by Failure Code</h3>
-        <div className="chart-wrapper">
+      <div className="chart-card-luxury">
+        <h3>
+          <BarChart3 size={14} color="#38BDF8" />
+          <span>Recovery by Failure Code</span>
+        </h3>
+        <div className="chart-wrapper-luxury">
           <Bar data={failureData} options={chartOptions} />
         </div>
       </div>
 
-      <div className="chart-card">
-        <h3>💳 Risk & Recovery by Category</h3>
-        <div className="chart-wrapper">
+      <div className="chart-card-luxury">
+        <h3>
+          <Layers size={14} color="#FBBF24" />
+          <span>Risk & Recovery by Category</span>
+        </h3>
+        <div className="chart-wrapper-luxury">
           <Bar data={typeData} options={chartOptions} />
         </div>
       </div>
