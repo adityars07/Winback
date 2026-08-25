@@ -18,6 +18,8 @@ frontend/dist/
 
 # Database
 *.db
+*.db*
+*.sqlite3
 
 # IDE
 .vscode/

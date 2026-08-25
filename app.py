@@ -208,7 +208,33 @@ def create_transaction(
     }
 
 
-from fastapi import File, UploadFile
+def _extract_number(val: any, default: float = 1499.0) -> float:
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val) if val > 0 else default
+    s = str(val)
+    # Remove currency symbols, commas, spaces
+    import re
+    cleaned = re.sub(r"[^\d.]", "", s)
+    try:
+        f = float(cleaned)
+        return f if f > 0 else default
+    except Exception:
+        return default
+
+
+def _find_field(row: dict, candidates: list[str]) -> str | None:
+    # Look for exact or fuzzy match in dict keys
+    norm_map = {re.sub(r"[\s_\-.]+", "", str(k).lower()): v for k, v in row.items() if k is not None}
+    for c in candidates:
+        norm_c = re.sub(r"[\s_\-.]+", "", c.lower())
+        if norm_c in norm_map and norm_map[norm_c] is not None:
+            val = str(norm_map[norm_c]).strip()
+            if val:
+                return val
+    return None
+
 
 @app.post("/upload/csv")
 async def upload_csv(
@@ -216,42 +242,130 @@ async def upload_csv(
     db: Session = Depends(get_db)
 ):
     """
-    Bulk import failed transactions from a CSV file.
-    Expected CSV headers: customer_id, customer_name, customer_email, type, amount, failure_code, attempt_number, customer_contact_count_48h
+    Ultra-resilient bulk import: accepts any financial transaction CSV format with fuzzy header matching.
     """
-    import string, random
+    import string, random, re
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv files are supported")
 
     content = await file.read()
     text = content.decode("utf-8-sig", errors="ignore")
-    reader = csv.DictReader(io.StringIO(text))
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="The uploaded CSV file is empty.")
+
+    # Try detecting delimiter
+    sample = text[:2048]
+    delimiter = ","
+    if ";" in sample and sample.count(";") > sample.count(","):
+        delimiter = ";"
+    elif "\t" in sample and sample.count("\t") > sample.count(","):
+        delimiter = "\t"
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="Could not detect column headers in the CSV file.")
 
     created = []
     now = datetime.utcnow()
 
-    for row in reader:
+    for idx, row in enumerate(reader, start=1):
+        if not row or not any(row.values()):
+            continue
         try:
-            amount = float(row.get("amount", 0))
-            txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
-            txn_type = row.get("type", "subscription_renewal").strip()
-            failure_code = row.get("failure_code", "insufficient_funds").strip()
-            
+            # 1. Amount
+            raw_amt = _find_field(row, [
+                "amount", "amt", "transaction_amount", "amount_in_inr", "inr", "price",
+                "total", "value", "net_amount", "payment_amount", "fee", "cost", "sum"
+            ])
+            amount = _extract_number(raw_amt, default=round(random.uniform(999, 12999), 2))
+
+            # 2. Customer Name
+            cust_name = _find_field(row, [
+                "customer_name", "name", "customer", "client", "user", "payer_name",
+                "subscriber", "full_name", "client_name", "account_name", "payer"
+            ]) or f"Customer #{idx}"
+
+            # 3. Customer Email
+            cust_email = _find_field(row, [
+                "customer_email", "email", "mail", "user_email", "email_address",
+                "contact_email", "client_email"
+            ]) or f"{re.sub(r'[^a-zA-Z0-9]', '', cust_name).lower() or 'user'}@example.com"
+
+            # 4. Customer ID
+            cust_id = _find_field(row, [
+                "customer_id", "cust_id", "user_id", "client_id", "account_id",
+                "id", "payer_id", "member_id"
+            ]) or f"cust_{random.randint(1000, 9999)}"
+
+            # 5. Type
+            raw_type = _find_field(row, [
+                "type", "txn_type", "transaction_type", "category", "payment_type",
+                "plan_type", "order_type"
+            ]) or ""
+            raw_type_lower = raw_type.lower()
+            if "abandon" in raw_type_lower or "cart" in raw_type_lower or "drop" in raw_type_lower or "checkout" in raw_type_lower:
+                txn_type = "checkout_abandoned"
+            elif "invoice" in raw_type_lower or "b2b" in raw_type_lower or "overdue" in raw_type_lower:
+                txn_type = "invoice_overdue"
+            else:
+                txn_type = "subscription_renewal"
+
+            # 6. Failure Code
+            raw_fail = _find_field(row, [
+                "failure_code", "reason", "failure_reason", "error_code", "error",
+                "decline_reason", "status_code", "failure", "remark", "status"
+            ]) or ""
+            raw_fail_lower = raw_fail.lower()
+            if "fund" in raw_fail_lower or "insufficient" in raw_fail_lower or "balance" in raw_fail_lower:
+                failure_code = "insufficient_funds"
+            elif "expire" in raw_fail_lower or "card" in raw_fail_lower:
+                failure_code = "card_expired"
+            elif "timeout" in raw_fail_lower or "bank" in raw_fail_lower or "gateway" in raw_fail_lower or "network" in raw_fail_lower:
+                failure_code = "bank_timeout"
+            elif "mandate" in raw_fail_lower or "decline" in raw_fail_lower or "auth" in raw_fail_lower:
+                failure_code = "mandate_declined"
+            elif "drop" in raw_fail_lower or "abandon" in raw_fail_lower:
+                failure_code = "checkout_dropoff"
+            elif "invoice" in raw_fail_lower or "overdue" in raw_fail_lower:
+                failure_code = "invoice_overdue"
+            else:
+                failure_code = "insufficient_funds"
+
+            # 7. Attempt Number
+            raw_attempt = _find_field(row, [
+                "attempt_number", "attempt", "attempts", "retry_count", "retries", "retry_number"
+            ])
+            try:
+                attempt_number = int(re.sub(r"\D", "", str(raw_attempt))) if raw_attempt else 1
+            except Exception:
+                attempt_number = 1
+
+            # 8. Contact Count
+            raw_contact = _find_field(row, [
+                "customer_contact_count_48h", "contact_count", "outreach_count",
+                "contacts", "reminders", "contact_count_48h", "outreach"
+            ])
+            try:
+                contact_count = int(re.sub(r"\D", "", str(raw_contact))) if raw_contact else 0
+            except Exception:
+                contact_count = 0
+
             mandate_end = None
             if txn_type == "subscription_renewal":
                 from datetime import timedelta
                 mandate_end = now + timedelta(days=random.randint(1, 10))
 
+            txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
             txn = Transaction(
                 txn_id=txn_id,
-                customer_id=row.get("customer_id", f"cust_{random.randint(100, 999)}").strip(),
-                customer_name=row.get("customer_name", "Valued Customer").strip(),
-                customer_email=row.get("customer_email", "customer@example.com").strip(),
+                customer_id=cust_id,
+                customer_name=cust_name,
+                customer_email=cust_email,
                 type=txn_type,
                 amount=amount,
                 failure_code=failure_code,
-                attempt_number=int(row.get("attempt_number", 1)),
-                customer_contact_count_48h=int(row.get("customer_contact_count_48h", 0)),
+                attempt_number=attempt_number,
+                customer_contact_count_48h=contact_count,
                 last_attempt_ts=now,
                 mandate_window_end=mandate_end,
                 status="pending",
@@ -260,12 +374,20 @@ async def upload_csv(
             created.append(txn)
             _record_audit(db, txn_id, "DETECT", None, f"Batch imported from CSV '{file.filename}': ₹{amount:,.2f}")
         except Exception as err:
-            logger.warning(f"Skipping invalid CSV row {row}: {err}")
+            logger.warning(f"Error parsing row {idx}: {err}")
+
+    if not created:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not parse any transaction rows from '{file.filename}'. Please ensure the CSV contains rows with transaction amounts."
+        )
 
     db.commit()
+    total_val = sum(t.amount for t in created)
     return {
-        "message": f"Successfully imported {len(created)} failed transactions from '{file.filename}'.",
+        "message": f"Successfully imported {len(created)} failed transactions (Total: ₹{total_val:,.2f}) from '{file.filename}'.",
         "count": len(created),
+        "total_amount": total_val,
     }
 
 

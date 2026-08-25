@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload, FileText, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Upload, FileText, Sparkles, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -22,7 +22,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   const handleCsvSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file) {
+      setMsg({ text: 'Please select a CSV file first.', type: 'error' });
+      return;
+    }
     setLoading(true);
     setMsg(null);
 
@@ -30,22 +33,32 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     formData.append('file', file);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
       const res = await fetch('/upload/csv', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'CSV upload failed');
+      if (!res.ok) throw new Error(data.detail || data.message || 'CSV upload failed');
 
       setMsg({ text: data.message, type: 'success' });
       setFile(null);
       setTimeout(() => {
         onSuccess();
         onClose();
-      }, 1500);
+      }, 1400);
     } catch (err: any) {
-      setMsg({ text: err.message, type: 'error' });
+      console.error('CSV Upload Error:', err);
+      setMsg({
+        text: err.name === 'AbortError' ? 'Upload timed out. Please try again.' : (err.message || 'Failed to parse CSV.'),
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -53,28 +66,41 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   const handleAiScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!documentText.trim()) return;
+    if (!documentText.trim()) {
+      setMsg({ text: 'Please paste invoice or transaction text.', type: 'error' });
+      return;
+    }
     setLoading(true);
     setMsg(null);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
       const res = await fetch('/upload/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document_text: documentText }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'AI Document scan failed');
+      if (!res.ok) throw new Error(data.detail || data.message || 'AI Document scan failed');
 
       setMsg({ text: data.message, type: 'success' });
       setDocumentText('');
       setTimeout(() => {
         onSuccess();
         onClose();
-      }, 1500);
+      }, 1400);
     } catch (err: any) {
-      setMsg({ text: err.message, type: 'error' });
+      console.error('AI Scan Error:', err);
+      setMsg({
+        text: err.name === 'AbortError' ? 'Scan timed out. Please try again.' : (err.message || 'AI Ingestion failed.'),
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -104,25 +130,32 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '14px' }}>
           <button
             className={`btn-console-action ${activeTab === 'csv' ? 'btn-console-primary' : ''}`}
-            onClick={() => setActiveTab('csv')}
+            onClick={() => {
+              setActiveTab('csv');
+              setMsg(null);
+            }}
           >
             <Upload size={13} />
             <span>Bulk CSV Ingestion</span>
           </button>
           <button
             className={`btn-console-action ${activeTab === 'ai' ? 'btn-console-primary' : ''}`}
-            onClick={() => setActiveTab('ai')}
+            onClick={() => {
+              setActiveTab('ai');
+              setMsg(null);
+            }}
           >
             <Sparkles size={13} />
             <span>AI Invoice / Receipt Scanner</span>
           </button>
         </div>
 
+        {/* Status Notification Message */}
         {msg && (
           <div
             style={{
               fontSize: '12px',
-              padding: '10px 14px',
+              padding: '12px 14px',
               borderRadius: '8px',
               marginBottom: '18px',
               background: msg.type === 'success' ? 'rgba(0, 229, 153, 0.15)' : 'rgba(244, 63, 94, 0.15)',
@@ -143,43 +176,54 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           <form onSubmit={handleCsvSubmit}>
             <div
               style={{
-                border: '2px dashed rgba(0, 229, 153, 0.3)',
+                border: '2px dashed rgba(0, 229, 153, 0.35)',
                 borderRadius: '14px',
-                padding: '32px',
+                padding: '30px',
                 textAlign: 'center',
                 background: 'rgba(0, 0, 0, 0.25)',
-                marginBottom: '20px',
+                marginBottom: '18px',
                 cursor: 'pointer',
-                transition: 'border-color 0.2s',
+                transition: 'all 0.2s',
               }}
               onClick={() => document.getElementById('csvFileInput')?.click()}
             >
-              <FileText size={38} color="#00E599" style={{ marginBottom: '12px' }} />
+              <FileText size={38} color="#00E599" style={{ marginBottom: '10px' }} />
               <div style={{ fontSize: '14px', fontWeight: 600, color: '#FFFFFF' }}>
-                {file ? file.name : 'Click or drop CSV file here'}
+                {file ? file.name : 'Click to select or drop CSV file here'}
               </div>
               <div style={{ fontSize: '11.5px', color: '#6B8077', marginTop: '4px' }}>
-                Standard gateway export format with amount and failure reason
+                Universal format: auto-detects Amount, Customer, Failure Code, etc.
               </div>
               <input
                 id="csvFileInput"
                 type="file"
                 accept=".csv"
                 style={{ display: 'none' }}
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] || null);
+                  setMsg(null);
+                }}
               />
             </div>
 
-            <div style={{ fontSize: '11px', color: '#A3B8B0', marginBottom: '20px', background: 'rgba(0, 0, 0, 0.3)', padding: '12px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <strong>Expected CSV Headers:</strong> customer_id, customer_name, customer_email, type, amount, failure_code, attempt_number, customer_contact_count_48h
+            <div style={{ fontSize: '11px', color: '#A3B8B0', marginBottom: '18px', background: 'rgba(0, 0, 0, 0.3)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              ⚡ <strong>Universal Auto-Mapping:</strong> Supports any gateway CSV columns (e.g. <code>amount</code>, <code>name</code>, <code>email</code>, <code>reason</code>, <code>type</code>). Missing fields are filled automatically.
             </div>
 
             <button
+              type="submit"
               className="btn-console-action btn-console-primary"
               style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
               disabled={!file || loading}
             >
-              {loading ? 'Ingesting & Recording Audit Events...' : 'Upload & Parse Batch'}
+              {loading ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Ingesting & Parsing Batch...</span>
+                </>
+              ) : (
+                <span>Upload & Ingest Transactions</span>
+              )}
             </button>
           </form>
         )}
@@ -193,32 +237,45 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             <textarea
               style={{
                 width: '100%',
-                height: '150px',
+                height: '140px',
                 background: 'rgba(0, 0, 0, 0.3)',
                 border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: '10px',
-                padding: '14px',
+                padding: '12px',
                 color: '#FFFFFF',
                 fontFamily: 'monospace',
                 fontSize: '12px',
                 outline: 'none',
-                marginBottom: '20px',
+                marginBottom: '18px',
                 resize: 'none',
               }}
               placeholder={`Example:
 Invoice #8902 to Priya Sharma (priya@gmail.com) for amount ₹8,450.
 Payment failed due to card_expired on 2026-08-20.`}
               value={documentText}
-              onChange={(e) => setDocumentText(e.target.value)}
+              onChange={(e) => {
+                setDocumentText(e.target.value);
+                setMsg(null);
+              }}
             />
 
             <button
+              type="submit"
               className="btn-console-action btn-console-primary"
               style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
               disabled={!documentText.trim() || loading}
             >
-              <Sparkles size={15} />
-              <span>{loading ? 'Extracting via Groq Llama 3.3 70B...' : 'Extract & Ingest with AI'}</span>
+              {loading ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Scanning via Groq Llama 3.3 70B...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={15} />
+                  <span>Extract & Ingest with AI</span>
+                </>
+              )}
             </button>
           </form>
         )}
