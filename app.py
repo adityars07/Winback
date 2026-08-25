@@ -519,6 +519,15 @@ async def run_batch_stream():
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.post("/clear")
+def clear_database(db: Session = Depends(get_db)):
+    """Completely wipe all transactions and audit events from the database."""
+    db.query(AuditEvent).delete()
+    db.query(Transaction).delete()
+    db.commit()
+    return {"message": "Database cleared. 0 transactions remaining.", "timestamp": datetime.utcnow().isoformat()}
+
+
 @app.post("/reset")
 def reset_database(db: Session = Depends(get_db)):
     from generate_data import seed_database

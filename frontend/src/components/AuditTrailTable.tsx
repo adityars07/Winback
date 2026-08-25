@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert, Sparkles, Upload, Database } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface AuditTrailTableProps {
   transactions: Transaction[];
   onSelectTxn: (txn: Transaction) => void;
+  onSeedDemo?: () => void;
+  onOpenUpload?: () => void;
 }
 
 const formatINR = (num: number): string => {
@@ -22,6 +24,8 @@ const formatINR = (num: number): string => {
 export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
   transactions,
   onSelectTxn,
+  onSeedDemo,
+  onOpenUpload,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [guardrailFilter, setGuardrailFilter] = useState<string>('all');
@@ -150,10 +154,40 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
             </tr>
           </thead>
           <tbody>
-            {paginated.length === 0 ? (
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '60px 20px' }}>
+                  <div style={{ maxWidth: '440px', margin: '0 auto' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(0, 229, 153, 0.1)', color: '#00E599', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
+                      <Database size={24} />
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF', marginBottom: '6px' }}>
+                      No Transactions in Queue (Database Clear)
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#A3B8B0', lineHeight: 1.5, marginBottom: '20px' }}>
+                      The database is currently empty. You can ingest your own CSV/invoice failure logs or load 150 synthetic records to test the AI recovery agent.
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+                      {onOpenUpload && (
+                        <button className="btn-console-action" onClick={onOpenUpload}>
+                          <Upload size={13} />
+                          <span>Ingest Invoices</span>
+                        </button>
+                      )}
+                      {onSeedDemo && (
+                        <button className="btn-console-action btn-console-primary" onClick={onSeedDemo}>
+                          <Sparkles size={13} />
+                          <span>Load 150 Demo Records</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={9} style={{ textAlign: 'center', padding: '48px', color: '#6B8077' }}>
-                  No matching transaction records found.
+                  No matching transaction records found for current filters.
                 </td>
               </tr>
             ) : (
@@ -242,27 +276,29 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
       </div>
 
       {/* Pagination Footer */}
-      <div className="pagination-luxury">
-        <div>
-          Showing Page {page} of {totalPages} ({sorted.length} total transactions)
+      {transactions.length > 0 && (
+        <div className="pagination-luxury">
+          <div>
+            Showing Page {page} of {totalPages} ({sorted.length} total transactions)
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="page-btn-luxury"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <button
+              className="page-btn-luxury"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            className="page-btn-luxury"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <button
-            className="page-btn-luxury"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

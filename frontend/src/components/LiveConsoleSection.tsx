@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, RotateCcw, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu } from 'lucide-react';
+import { Play, RotateCcw, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu, Trash2, Sparkles } from 'lucide-react';
 import { Transaction, SummaryStats } from '../types';
 import { AnalyticsCharts } from './AnalyticsCharts';
 import { AuditTrailTable } from './AuditTrailTable';
@@ -9,7 +9,8 @@ interface LiveConsoleSectionProps {
   summary: SummaryStats | null;
   transactions: Transaction[];
   onRunBatch: () => void;
-  onReset: () => void;
+  onClear: () => void;
+  onSeedDemo: () => void;
   onExport: () => void;
   onOpenUpload: () => void;
   onSelectTxn: (txn: Transaction) => void;
@@ -21,7 +22,8 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
   summary,
   transactions,
   onRunBatch,
-  onReset,
+  onClear,
+  onSeedDemo,
   onExport,
   onOpenUpload,
   onSelectTxn,
@@ -75,18 +77,29 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
 
             <button
               className="btn-console-action"
-              onClick={onReset}
+              onClick={onClear}
               disabled={isProcessing}
-              title="Reset synthetic demo transactions"
+              title="Completely wipe all transactions to 0"
+              style={{ color: '#FB7185', borderColor: 'rgba(244, 63, 94, 0.3)' }}
             >
-              <RotateCcw size={13} />
-              <span>Reset State</span>
+              <Trash2 size={13} />
+              <span>Clear All</span>
+            </button>
+
+            <button
+              className="btn-console-action"
+              onClick={onSeedDemo}
+              disabled={isProcessing}
+              title="Load 150 synthetic transactions for testing"
+            >
+              <Sparkles size={13} color="#00E599" />
+              <span>Load 150 Demo Records</span>
             </button>
 
             <button
               className="btn-console-action btn-console-primary"
               onClick={onRunBatch}
-              disabled={isProcessing}
+              disabled={isProcessing || transactions.length === 0}
             >
               {isProcessing ? (
                 <>
@@ -197,6 +210,8 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
         <AuditTrailTable
           transactions={transactions}
           onSelectTxn={onSelectTxn}
+          onSeedDemo={onSeedDemo}
+          onOpenUpload={onOpenUpload}
         />
       </div>
     </section>

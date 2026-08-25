@@ -88,15 +88,26 @@ export const App: React.FC = () => {
     };
   };
 
-  const handleReset = async () => {
-    if (!window.confirm('Reset all demo transactions back to fresh pending state?')) return;
+  const handleClear = async () => {
+    if (!window.confirm('Clear all transactions and audit events from the database?')) return;
+    try {
+      const res = await fetch('/clear', { method: 'POST' });
+      if (res.ok) {
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Clear error:', err);
+    }
+  };
+
+  const handleSeedDemo = async () => {
     try {
       const res = await fetch('/reset', { method: 'POST' });
       if (res.ok) {
         await loadData();
       }
     } catch (err) {
-      console.error('Reset error:', err);
+      console.error('Seed demo error:', err);
     }
   };
 
@@ -165,7 +176,8 @@ export const App: React.FC = () => {
         summary={summary}
         transactions={transactions}
         onRunBatch={handleRunBatchStream}
-        onReset={handleReset}
+        onClear={handleClear}
+        onSeedDemo={handleSeedDemo}
         onExport={handleExport}
         onOpenUpload={() => setIsUploadOpen(true)}
         onSelectTxn={(txn) => setSelectedTxn(txn)}
