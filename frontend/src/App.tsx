@@ -111,6 +111,41 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSeedDemoPair = async () => {
+    try {
+      const res = await fetch('/demo/seed-pair', { method: 'POST' });
+      if (res.ok) {
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Seed demo pair error:', err);
+    }
+  };
+
+  const handleProcessSingleTxn = async (txnId: string) => {
+    try {
+      const res = await fetch(`/transactions/${txnId}/process`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        // Update single transaction in state
+        setTransactions((prev) => {
+          const idx = prev.findIndex((t) => t.txn_id === txnId);
+          if (idx !== -1) {
+            const updated = [...prev];
+            updated[idx] = data.transaction;
+            return updated;
+          }
+          return [data.transaction, ...prev];
+        });
+        if (data.summary) {
+          setSummary(data.summary);
+        }
+      }
+    } catch (err) {
+      console.error('Single process error:', err);
+    }
+  };
+
   const handleExport = () => {
     window.open('/export/csv', '_blank');
   };
@@ -178,6 +213,8 @@ export const App: React.FC = () => {
         onRunBatch={handleRunBatchStream}
         onClear={handleClear}
         onSeedDemo={handleSeedDemo}
+        onSeedDemoPair={handleSeedDemoPair}
+        onProcessSingleTxn={handleProcessSingleTxn}
         onExport={handleExport}
         onOpenUpload={() => setIsUploadOpen(true)}
         onSelectTxn={(txn) => setSelectedTxn(txn)}
