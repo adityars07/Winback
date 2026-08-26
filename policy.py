@@ -1,11 +1,19 @@
 """
 Winback — Policy / Guardrail Engine
 Pure-Python deterministic policy engine. No LLM calls.
-Enforces business rules and overrides unsafe actions.
+Enforces NPCI business rules and overrides unsafe actions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from models import Transaction
+
+
+def _is_past_mandate(mandate_window_end: datetime | None) -> bool:
+    if mandate_window_end is None:
+        return False
+    if mandate_window_end.tzinfo is None:
+        return datetime.now(timezone.utc).replace(tzinfo=None) > mandate_window_end
+    return datetime.now(timezone.utc) > mandate_window_end
 
 
 def apply_policy(txn: Transaction, recommended_action: str) -> tuple[str, str]:
@@ -29,7 +37,7 @@ def apply_policy(txn: Transaction, recommended_action: str) -> tuple[str, str]:
     if (
         txn.type == "subscription_renewal"
         and txn.mandate_window_end is not None
-        and datetime.utcnow() > txn.mandate_window_end
+        and _is_past_mandate(txn.mandate_window_end)
         and recommended_action == "retry_payment"
     ):
         return (
