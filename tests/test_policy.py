@@ -3,9 +3,13 @@ Winback — Unit Tests for Policy Engine (Guardrails)
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models import Transaction
 from policy import apply_policy
+
+
+def _now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def create_mock_txn(**kwargs) -> Transaction:
@@ -18,8 +22,8 @@ def create_mock_txn(**kwargs) -> Transaction:
         "amount": 1499.0,
         "failure_code": "insufficient_funds",
         "attempt_number": 1,
-        "last_attempt_ts": datetime.utcnow(),
-        "mandate_window_end": datetime.utcnow() + timedelta(days=5),
+        "last_attempt_ts": _now(),
+        "mandate_window_end": _now() + timedelta(days=5),
         "customer_contact_count_48h": 0,
         "status": "pending",
     }
@@ -48,7 +52,7 @@ def test_rule_1_attempt_3_allowed():
 
 def test_rule_2_mandate_window_expired():
     """Rule 2: Subscription renewal past mandate_window_end + retry_payment -> override to send_payment_link"""
-    past_date = datetime.utcnow() - timedelta(days=2)
+    past_date = _now() - timedelta(days=2)
     txn = create_mock_txn(
         type="subscription_renewal",
         mandate_window_end=past_date,
@@ -63,7 +67,7 @@ def test_rule_2_mandate_window_expired():
 
 def test_rule_2_mandate_window_valid():
     """Subscription renewal inside mandate_window_end -> allowed"""
-    future_date = datetime.utcnow() + timedelta(days=2)
+    future_date = _now() + timedelta(days=2)
     txn = create_mock_txn(
         type="subscription_renewal",
         mandate_window_end=future_date,
