@@ -37,11 +37,16 @@ export interface RecoveryByType {
 
 export interface SummaryStats {
   total_at_risk: number;
+  recoverable_revenue: number;
   total_recovered: number;
   recovery_rate: number;
+  effective_recovery_rate: number;
+  gross_recovery_rate: number;
   total_transactions: number;
   status_counts: Record<string, number>;
+  status_amounts: Record<string, number>;
   action_counts: Record<string, number>;
   guardrail_blocks: number;
+  guardrail_blocked_amount: number;
   recovery_by_type: Record<string, RecoveryByType>;
 }
