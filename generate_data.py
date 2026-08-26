@@ -1,12 +1,14 @@
 """
-Winback — Synthetic data generator
-Creates 150 realistic failed/at-risk payment records.
-Guarantees transactions that trigger all 3 guardrails visibly for hackathon demo.
+Winback — Deterministic Synthetic Data Generator & Presentation Fixtures
+Creates 150 reproducible failed payment records with fixed seed (zero randomness between runs).
+Includes two dedicated, highlighted demo transactions at the top:
+1. TXN-DEMO-001: Golden Recovery Success (Smart Retry inside NPCI mandate)
+2. TXN-DEMO-002: Regulatory Policy Block (NPCI expired mandate intercepted & rerouted)
 """
 
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from models import engine, Base, Transaction, SessionLocal
 
@@ -35,68 +37,120 @@ TYPE_FAILURE_MAP = {
     "invoice_overdue": ["invoice_overdue", "bank_timeout"],
 }
 
-AMOUNTS_RANGE = (199, 15000)
 NUM_RECORDS = 150
 
 
-def _rand_id(prefix: str, length: int = 6) -> str:
-    chars = string.ascii_letters + string.digits
-    return f"{prefix}_{''.join(random.choices(chars, k=length))}"
+def get_demo_pair() -> list[dict]:
+    """
+    Returns the two perfect presentation demo transactions:
+    1. TXN-DEMO-001 (Success): High-value ₹12,499.00 renewal with active mandate window -> Smart retry succeeds.
+    2. TXN-DEMO-002 (Policy Block): ₹8,750.00 renewal with expired mandate window -> Intercepted by Rule 2 & rerouted to link.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    
+    demo_success = {
+        "txn_id": "TXN-DEMO-001",
+        "customer_id": "cust_aarav_sharma",
+        "customer_name": "Aarav Sharma",
+        "customer_email": "aarav.sharma@gmail.com",
+        "type": "subscription_renewal",
+        "amount": 12499.00,
+        "failure_code": "bank_timeout",
+        "attempt_number": 1,
+        "last_attempt_ts": now - timedelta(hours=2),
+        "mandate_window_end": now + timedelta(days=5),
+        "customer_contact_count_48h": 0,
+        "status": "pending",
+        "diagnosis": None,
+        "recommended_action": None,
+        "confidence": None,
+        "guardrail_notes": None,
+        "final_action_taken": None,
+        "recovered_amount": 0.0,
+        "processed_at": None,
+    }
+
+    demo_block = {
+        "txn_id": "TXN-DEMO-002",
+        "customer_id": "cust_priya_patel",
+        "customer_name": "Priya Patel",
+        "customer_email": "priya.p@outlook.com",
+        "type": "subscription_renewal",
+        "amount": 8750.00,
+        "failure_code": "insufficient_funds",
+        "attempt_number": 2,
+        "last_attempt_ts": now - timedelta(hours=6),
+        "mandate_window_end": now - timedelta(days=2),  # Expired mandate window!
+        "customer_contact_count_48h": 0,
+        "status": "pending",
+        "diagnosis": None,
+        "recommended_action": None,
+        "confidence": None,
+        "guardrail_notes": None,
+        "final_action_taken": None,
+        "recovered_amount": 0.0,
+        "processed_at": None,
+    }
+
+    return [demo_success, demo_block]
 
 
-def _random_ts(days_back: int = 14) -> datetime:
-    now = datetime.utcnow()
-    delta = timedelta(seconds=random.randint(0, days_back * 86400))
-    return now - delta
-
-
-def generate_transactions(n: int = NUM_RECORDS) -> list[dict]:
-    records = []
+def generate_transactions(n: int = NUM_RECORDS, seed: int = 42) -> list[dict]:
+    """Generate deterministic batch of transactions with fixed seed."""
+    rng = random.Random(seed)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     types = list(TYPE_FAILURE_MAP.keys())
-    now = datetime.utcnow()
 
-    # Rule 1 triggers: attempt_number > 3 (e.g., 4 or 5)
-    # Rule 2 triggers: subscription_renewal + past mandate_window_end
-    # Rule 3 triggers: customer_contact_count_48h >= 2
+    # Start with the two perfect demo transactions
+    records = get_demo_pair()
+    remaining_count = n - len(records)
 
-    for i in range(n):
-        name, email = random.choice(INDIAN_NAMES)
-        txn_type = random.choice(types)
-        failure_code = random.choice(TYPE_FAILURE_MAP[txn_type])
-        amount = round(random.uniform(*AMOUNTS_RANGE), 2)
+    for i in range(remaining_count):
+        idx = i + 3
+        name, email = INDIAN_NAMES[i % len(INDIAN_NAMES)]
+        txn_type = types[i % len(types)]
+        failures = TYPE_FAILURE_MAP[txn_type]
+        failure_code = failures[i % len(failures)]
         
-        # Controlled distribution for guardrails
-        if i < 25:
-            # Force Rule 1 candidate (attempt_number > 3)
-            attempt_number = random.choice([4, 5])
-            contact_count = random.choice([0, 1])
+        # Deterministic distributed amount calculation
+        base_amt = 999.0 + ((i * 387.5) % 13500.0)
+        amount = round(base_amt, 2)
+
+        # Controlled deterministic distribution for guardrails:
+        if i < 20:
+            # Rule 1 triggers: attempt_number > 3 (e.g., 4 or 5)
+            attempt_number = 4 if i % 2 == 0 else 5
+            contact_count = 0 if i % 2 == 0 else 1
             mandate_window_end = now + timedelta(days=5) if txn_type == "subscription_renewal" else None
-        elif i < 55:
-            # Force Rule 2 candidate (expired mandate window for subscription renewal)
+            failure_code = "insufficient_funds"
+        elif i < 50:
+            # Rule 2 triggers: subscription_renewal + past mandate_window_end
             txn_type = "subscription_renewal"
-            failure_code = random.choice(["insufficient_funds", "bank_timeout"])
-            attempt_number = random.choice([1, 2])
-            contact_count = random.choice([0, 1])
-            mandate_window_end = now - timedelta(days=random.randint(1, 7))
-        elif i < 85:
-            # Force Rule 3 candidate (contact count >= 2)
-            attempt_number = random.choice([1, 2])
-            contact_count = random.choice([2, 3])
-            mandate_window_end = now + timedelta(days=5) if txn_type == "subscription_renewal" else None
+            failure_code = "insufficient_funds" if i % 2 == 0 else "bank_timeout"
+            attempt_number = 1 if i % 2 == 0 else 2
+            contact_count = 0
+            mandate_window_end = now - timedelta(days=((i % 5) + 1))
+        elif i < 75:
+            # Rule 3 triggers: contact count >= 2
+            attempt_number = 1
+            contact_count = 2 if i % 2 == 0 else 3
+            mandate_window_end = now + timedelta(days=4) if txn_type == "subscription_renewal" else None
         else:
-            # Normal mix
-            attempt_number = random.choices([1, 2, 3, 4], weights=[50, 30, 15, 5])[0]
-            contact_count = random.choices([0, 1, 2], weights=[50, 35, 15])[0]
+            # Normal distribution
+            attempt_number = 1 if i % 3 != 0 else 2
+            contact_count = 0 if i % 4 != 0 else 1
             if txn_type == "subscription_renewal":
-                mandate_window_end = now + timedelta(days=random.randint(-3, 10))
+                mandate_window_end = now + timedelta(days=((i % 7) + 2))
             else:
                 mandate_window_end = None
 
-        last_attempt = _random_ts(14)
+        last_attempt = now - timedelta(days=(i % 10 + 1), hours=(i % 24))
+        txn_id = f"txn_det_{idx:03d}"
+        cust_id = f"cust_det_{((i * 17) % 900) + 100}"
 
         records.append({
-            "txn_id": _rand_id("txn"),
-            "customer_id": _rand_id("cust"),
+            "txn_id": txn_id,
+            "customer_id": cust_id,
             "customer_name": name,
             "customer_email": email,
             "type": txn_type,
@@ -119,11 +173,12 @@ def generate_transactions(n: int = NUM_RECORDS) -> list[dict]:
     return records
 
 
-def seed_database():
+def seed_database(seed: int = 42):
+    """Drop and reseed database with 150 deterministic transactions."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
-    records = generate_transactions()
+    records = generate_transactions(n=NUM_RECORDS, seed=seed)
     db = SessionLocal()
 
     for rec in records:
@@ -132,16 +187,36 @@ def seed_database():
     db.commit()
     db.close()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     outside = sum(1 for r in records if r["mandate_window_end"] and r["mandate_window_end"] < now)
     high_attempt = sum(1 for r in records if r["attempt_number"] > 3)
     high_contact = sum(1 for r in records if r["customer_contact_count_48h"] >= 2)
+    total_val = sum(r['amount'] for r in records)
 
-    print(f"[OK] Seeded {len(records)} transactions")
+    print(f"[OK] Deterministically seeded {len(records)} transactions")
+    print(f"  |-- Demo 1: {records[0]['txn_id']} (INR {records[0]['amount']:,.2f} - Expected: Success)")
+    print(f"  |-- Demo 2: {records[1]['txn_id']} (INR {records[1]['amount']:,.2f} - Expected: Guardrail Block)")
     print(f"  |-- Outside mandate window: {outside}")
-    print(f"  |-- Attempt > 3 (will trigger max-retry guardrail): {high_attempt}")
-    print(f"  |-- Contact count >= 2 (will trigger contact-limit guardrail): {high_contact}")
-    print(f"  |-- Total INR at risk: {sum(r['amount'] for r in records):,.2f}")
+    print(f"  |-- Attempt > 3 (Rule 1 max retry block): {high_attempt}")
+    print(f"  |-- Contact count >= 2 (Rule 3 contact cap): {high_contact}")
+    print(f"  |-- Total INR at risk: INR {total_val:,.2f}")
+
+
+def seed_demo_pair_database():
+    """Drop and seed ONLY the two demo transactions for focused demonstration."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    records = get_demo_pair()
+    db = SessionLocal()
+
+    for rec in records:
+        db.add(Transaction(**rec))
+
+    db.commit()
+    db.close()
+
+    print(f"[OK] Seeded 2 demo transactions (Total: INR {sum(r['amount'] for r in records):,.2f})")
 
 
 if __name__ == "__main__":
