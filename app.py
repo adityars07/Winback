@@ -10,13 +10,13 @@ import json
 import logging
 import asyncio
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -84,29 +84,44 @@ def _txn_to_response(txn: Transaction) -> dict:
     }
 
 
-def _record_audit(db: Session, txn_id: str, stage: str, action: str | None, details: str):
+def _record_audit(db: Session, txn_id: str, stage: str, action: str | None, details: str, commit: bool = False):
     event = AuditEvent(
         txn_id=txn_id,
         stage=stage,
         action=action,
         details=details,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc).replace(tzinfo=None)
     )
     db.add(event)
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def _compute_summary(db: Session) -> dict:
     all_txns = db.query(Transaction).all()
-    total_at_risk = sum(t.amount for t in all_txns)
-    total_recovered = sum(t.recovered_amount for t in all_txns)
-    recovery_rate = (total_recovered / total_at_risk * 100) if total_at_risk > 0 else 0.0
+    
+    total_at_risk = round(sum(t.amount for t in all_txns), 2)
+    total_recovered = round(sum(t.recovered_amount for t in all_txns), 2)
 
-    status_counts = {}
+    status_counts = {"recovered": 0, "escalated": 0, "unrecoverable": 0, "pending": 0}
+    status_amounts = {"recovered": 0.0, "escalated": 0.0, "unrecoverable": 0.0, "pending": 0.0}
+
     for t in all_txns:
-        status_counts[t.status] = status_counts.get(t.status, 0) + 1
+        st = t.status if t.status in status_counts else "pending"
+        status_counts[st] += 1
+        status_amounts[st] = round(status_amounts[st] + t.amount, 2)
 
+    unrecoverable_amount = status_amounts["unrecoverable"]
+    recoverable_revenue = round(max(0.0, total_at_risk - unrecoverable_amount), 2)
+
+    # Effective Recovery Rate: % of actionable recoverable revenue won back
+    effective_recovery_rate = round((total_recovered / recoverable_revenue * 100), 2) if recoverable_revenue > 0 else 0.0
+    # Gross Recovery Rate: % of gross failed pipeline won back
+    gross_recovery_rate = round((total_recovered / total_at_risk * 100), 2) if total_at_risk > 0 else 0.0
+
+    # Policy / guardrail metrics
     guardrail_blocks = sum(1 for t in all_txns if t.guardrail_notes and "⛔" in t.guardrail_notes)
+    guardrail_blocked_amount = round(sum(t.amount for t in all_txns if t.guardrail_notes and "⛔" in t.guardrail_notes), 2)
 
     # Action counts
     action_counts = {}
@@ -118,18 +133,23 @@ def _compute_summary(db: Session) -> dict:
     recovery_by_type = {}
     for t in all_txns:
         recovery_by_type.setdefault(t.type, {"total": 0.0, "recovered": 0.0, "count": 0})
-        recovery_by_type[t.type]["total"] += t.amount
-        recovery_by_type[t.type]["recovered"] += t.recovered_amount
+        recovery_by_type[t.type]["total"] = round(recovery_by_type[t.type]["total"] + t.amount, 2)
+        recovery_by_type[t.type]["recovered"] = round(recovery_by_type[t.type]["recovered"] + t.recovered_amount, 2)
         recovery_by_type[t.type]["count"] += 1
 
     return {
-        "total_at_risk": round(total_at_risk, 2),
-        "total_recovered": round(total_recovered, 2),
-        "recovery_rate": round(recovery_rate, 2),
+        "total_at_risk": total_at_risk,
+        "recoverable_revenue": recoverable_revenue,
+        "total_recovered": total_recovered,
+        "recovery_rate": effective_recovery_rate,
+        "effective_recovery_rate": effective_recovery_rate,
+        "gross_recovery_rate": gross_recovery_rate,
         "total_transactions": len(all_txns),
         "status_counts": status_counts,
+        "status_amounts": status_amounts,
         "action_counts": action_counts,
         "guardrail_blocks": guardrail_blocks,
+        "guardrail_blocked_amount": guardrail_blocked_amount,
         "recovery_by_type": recovery_by_type,
     }
 
@@ -144,15 +164,15 @@ def health():
 from pydantic import BaseModel, Field
 
 class CreateTransactionSchema(BaseModel):
-    customer_id: str = Field(..., example="cust_1042")
-    customer_name: str = Field(..., example="Rahul Sharma")
-    customer_email: str = Field(..., example="rahul@example.com")
-    type: str = Field(..., example="subscription_renewal") # subscription_renewal, checkout_abandoned, invoice_overdue
-    amount: float = Field(..., example=1499.0)
-    failure_code: str = Field(..., example="insufficient_funds") # insufficient_funds, card_expired, bank_timeout, mandate_declined, checkout_dropoff, invoice_overdue
-    attempt_number: int = Field(1, example=1)
-    customer_contact_count_48h: int = Field(0, example=0)
-    mandate_window_end_days: float | None = Field(None, example=5.0)  # days from now
+    customer_id: str = Field(..., json_schema_extra={"example": "cust_1042"})
+    customer_name: str = Field(..., json_schema_extra={"example": "Rahul Sharma"})
+    customer_email: str = Field(..., json_schema_extra={"example": "rahul@example.com"})
+    type: str = Field(..., json_schema_extra={"example": "subscription_renewal"})
+    amount: float = Field(..., json_schema_extra={"example": 1499.0})
+    failure_code: str = Field(..., json_schema_extra={"example": "insufficient_funds"})
+    attempt_number: int = Field(1, json_schema_extra={"example": 1})
+    customer_contact_count_48h: int = Field(0, json_schema_extra={"example": 0})
+    mandate_window_end_days: float | None = Field(None, json_schema_extra={"example": 5.0})
 
 
 @app.get("/transactions")
@@ -178,7 +198,7 @@ def create_transaction(
     """Add a new custom failed transaction to Winback (e.g. from Razorpay webhook)."""
     import string, random
     txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     mandate_end = None
     if payload.mandate_window_end_days is not None:
@@ -266,7 +286,7 @@ async def upload_csv(
         raise HTTPException(status_code=400, detail="Could not detect column headers in the CSV file.")
 
     created = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     for idx, row in enumerate(reader, start=1):
         if not row or not any(row.values()):
@@ -392,7 +412,7 @@ async def upload_csv(
 
 
 class DocumentScanSchema(BaseModel):
-    document_text: str = Field(..., example="Invoice #8902 to Priya Sharma (priya@gmail.com) for amount ₹8,450. Payment failed due to card_expired on 2026-08-20.")
+    document_text: str = Field(..., json_schema_extra={"example": "Invoice #8902 to Priya Sharma (priya@gmail.com) for amount ₹8,450. Payment failed due to card_expired on 2026-08-20."})
 
 
 @app.post("/upload/document")
@@ -447,7 +467,7 @@ No other text."""
         }
 
     txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     txn = Transaction(
         txn_id=txn_id,
@@ -566,7 +586,7 @@ def run_batch(db: Session = Depends(get_db)):
 
             # Execute
             outcome = execute_action(txn, final_action)
-            txn.processed_at = datetime.utcnow()
+            txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             results.append(outcome)
 
             _record_audit(db, txn.txn_id, "EXECUTE", final_action, outcome.get("message", ""))
@@ -616,7 +636,7 @@ async def run_batch_stream():
                     _record_audit(db, txn.txn_id, "GUARDRAIL", final_action, guardrail_notes)
 
                     outcome = execute_action(txn, final_action)
-                    txn.processed_at = datetime.utcnow()
+                    txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
                     _record_audit(db, txn.txn_id, "EXECUTE", final_action, outcome.get("message", ""))
                     db.commit()
@@ -641,20 +661,75 @@ async def run_batch_stream():
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.post("/transactions/{txn_id}/process")
+def process_single_transaction(txn_id: str, db: Session = Depends(get_db)):
+    """Process a single transaction through the full 4-stage pipeline (DETECT -> DIAGNOSE -> GUARDRAIL -> EXECUTE)."""
+    txn = db.query(Transaction).filter(Transaction.txn_id == txn_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail=f"Transaction '{txn_id}' not found.")
+
+    _record_audit(db, txn.txn_id, "DETECT", None, f"Detected pending failure ({txn.failure_code}) for ₹{txn.amount:,.2f}")
+
+    # Diagnose
+    diag = diagnose_transaction(txn)
+    txn.diagnosis = diag.get("diagnosis", "")
+    txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
+    txn.confidence = diag.get("confidence", "medium")
+
+    _record_audit(db, txn.txn_id, "DIAGNOSE", txn.recommended_action, f"LLM recommended '{txn.recommended_action}' ({txn.confidence} confidence): {txn.diagnosis}")
+
+    # Guardrail
+    final_action, guardrail_notes = apply_policy(txn, txn.recommended_action)
+    txn.guardrail_notes = guardrail_notes
+
+    _record_audit(db, txn.txn_id, "GUARDRAIL", final_action, f"Policy Engine output: {guardrail_notes}")
+
+    # Execute
+    outcome = execute_action(txn, final_action)
+    txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    _record_audit(db, txn.txn_id, "EXECUTE", final_action, outcome.get("message", ""))
+    db.commit()
+
+    return {
+        "message": f"Transaction {txn_id} processed successfully: {outcome.get('message', '')}",
+        "transaction": _txn_to_response(txn),
+        "outcome": outcome,
+        "summary": _compute_summary(db),
+    }
+
+
+@app.post("/demo/seed-pair")
+def seed_demo_pair(db: Session = Depends(get_db)):
+    """Seed ONLY the two presentation demo transactions (1 Guaranteed Success, 1 Guaranteed Policy Block)."""
+    from generate_data import seed_demo_pair_database
+    seed_demo_pair_database()
+    return {
+        "message": "Seeded 2 presentation demo transactions: TXN-DEMO-001 (Success) and TXN-DEMO-002 (Policy Block).",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": _compute_summary(db)
+    }
+
+
 @app.post("/clear")
 def clear_database(db: Session = Depends(get_db)):
     """Completely wipe all transactions and audit events from the database."""
     db.query(AuditEvent).delete()
     db.query(Transaction).delete()
     db.commit()
-    return {"message": "Database cleared. 0 transactions remaining.", "timestamp": datetime.utcnow().isoformat()}
+    return {"message": "Database cleared. 0 transactions remaining.", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/reset")
 def reset_database(db: Session = Depends(get_db)):
+    """Reset database with 150 deterministic synthetic transactions."""
     from generate_data import seed_database
     seed_database()
-    return {"message": "Database reset with 150 synthetic transactions.", "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "message": "Database reset with 150 deterministic transactions (including TXN-DEMO-001 and TXN-DEMO-002).",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "summary": _compute_summary(db)
+    }
 
 
 # Mount static assets if build exists
