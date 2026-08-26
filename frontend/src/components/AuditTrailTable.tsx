@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert, Sparkles, Upload, Database } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert, Sparkles, Upload, Database, Play } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface AuditTrailTableProps {
@@ -7,6 +7,7 @@ interface AuditTrailTableProps {
   onSelectTxn: (txn: Transaction) => void;
   onSeedDemo?: () => void;
   onOpenUpload?: () => void;
+  onProcessSingleTxn?: (txn_id: string) => void;
 }
 
 const formatINR = (num: number): string => {
@@ -26,6 +27,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
   onSelectTxn,
   onSeedDemo,
   onOpenUpload,
+  onProcessSingleTxn,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [guardrailFilter, setGuardrailFilter] = useState<string>('all');
@@ -57,6 +59,11 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
         (!t.guardrail_notes || !t.guardrail_notes.includes('✅'))
       )
         return false;
+      if (
+        guardrailFilter === 'demo' &&
+        !t.txn_id.startsWith('TXN-DEMO')
+      )
+        return false;
       if (search) {
         const q = search.toLowerCase();
         const matchId = t.txn_id.toLowerCase().includes(q);
@@ -71,6 +78,13 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
+      // Pin demo transactions to the very top if no custom sort direction
+      if (sortKey === 'amount' && sortDir === 'desc') {
+        if (a.txn_id === 'TXN-DEMO-001') return -1;
+        if (b.txn_id === 'TXN-DEMO-001') return 1;
+        if (a.txn_id === 'TXN-DEMO-002') return -1;
+        if (b.txn_id === 'TXN-DEMO-002') return 1;
+      }
       const aVal = a[sortKey] ?? '';
       const bVal = b[sortKey] ?? '';
       if (typeof aVal === 'number' && typeof bVal === 'number') {
@@ -120,6 +134,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
             }}
           >
             <option value="all">All Policies</option>
+            <option value="demo">⭐ Presentation Demos (1 & 2)</option>
             <option value="blocked">Guardrail Blocked (Overridden ⛔)</option>
             <option value="approved">Approved Pass-Through (✅)</option>
           </select>
@@ -151,12 +166,13 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
               <th onClick={() => handleSort('final_action_taken')}>Final Action ↕</th>
               <th onClick={() => handleSort('status')}>Status ↕</th>
               <th onClick={() => handleSort('recovered_amount')}>Recovered ↕</th>
+              <th>Live Action</th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '60px 20px' }}>
                   <div style={{ maxWidth: '440px', margin: '0 auto' }}>
                     <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(0, 229, 153, 0.1)', color: '#00E599', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
                       <Database size={24} />
@@ -165,7 +181,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
                       No Transactions in Queue (Database Clear)
                     </div>
                     <p style={{ fontSize: '13px', color: '#A3B8B0', lineHeight: 1.5, marginBottom: '20px' }}>
-                      The database is currently empty. You can ingest your own CSV/invoice failure logs or load 150 synthetic records to test the AI recovery agent.
+                      The database is currently empty. You can ingest your own CSV failure logs or load the deterministic demo dataset.
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
                       {onOpenUpload && (
@@ -186,7 +202,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
               </tr>
             ) : paginated.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '48px', color: '#6B8077' }}>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '48px', color: '#6B8077' }}>
                   No matching transaction records found for current filters.
                 </td>
               </tr>
@@ -194,7 +210,9 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
               paginated.map((t) => {
                 const isBlocked = t.guardrail_notes && t.guardrail_notes.includes('⛔');
                 const isOverridden = isBlocked && t.recommended_action !== t.final_action_taken;
-                const rowClass = `status-${t.status}`;
+                const isDemo1 = t.txn_id === 'TXN-DEMO-001';
+                const isDemo2 = t.txn_id === 'TXN-DEMO-002';
+                const rowClass = `status-${t.status} ${isDemo1 || isDemo2 ? 'demo-highlight-row' : ''}`;
 
                 return (
                   <tr
@@ -202,9 +220,28 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
                     className={rowClass}
                     onClick={() => onSelectTxn(t)}
                     title="Click to inspect full audit event timeline & decision trace"
+                    style={{
+                      borderLeft: isDemo1
+                        ? '3px solid #00E599'
+                        : isDemo2
+                        ? '3px solid #FB7185'
+                        : undefined,
+                    }}
                   >
                     <td>
-                      <span className="mono-hash">{t.txn_id}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span className="mono-hash">{t.txn_id}</span>
+                        {isDemo1 && (
+                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(0, 229, 153, 0.2)', color: '#00E599', display: 'inline-block', width: 'fit-content' }}>
+                            ⭐ DEMO 1 (SUCCESS)
+                          </span>
+                        )}
+                        {isDemo2 && (
+                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(244, 63, 94, 0.2)', color: '#FB7185', display: 'inline-block', width: 'fit-content' }}>
+                            🛡️ DEMO 2 (POLICY BLOCK)
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     <td>
@@ -266,6 +303,36 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
                       <span className={`mono-amount ${t.recovered_amount > 0 ? 'recovered-glow' : ''}`}>
                         {t.recovered_amount > 0 ? `₹${formatINR(t.recovered_amount)}` : '—'}
                       </span>
+                    </td>
+
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {t.status === 'pending' && onProcessSingleTxn ? (
+                        <button
+                          className="btn-console-action"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            background: isDemo1
+                              ? 'rgba(0, 229, 153, 0.15)'
+                              : isDemo2
+                              ? 'rgba(251, 113, 133, 0.15)'
+                              : 'rgba(255, 255, 255, 0.05)',
+                            borderColor: isDemo1
+                              ? '#00E599'
+                              : isDemo2
+                              ? '#FB7185'
+                              : 'rgba(255, 255, 255, 0.15)',
+                            color: isDemo1 ? '#00E599' : isDemo2 ? '#FB7185' : '#E2E8F0',
+                          }}
+                          onClick={() => onProcessSingleTxn(t.txn_id)}
+                          title={`Process ${t.txn_id} individually`}
+                        >
+                          <Play size={11} />
+                          <span>Run</span>
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#6B8077' }}>Resolved</span>
+                      )}
                     </td>
                   </tr>
                 );
