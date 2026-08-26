@@ -4,7 +4,7 @@ Winback — Database models (SQLAlchemy ORM)
 
 from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 DATABASE_URL = "sqlite:///winback.db"
@@ -70,7 +70,7 @@ class AuditEvent(Base):
     stage = Column(String, nullable=False)  # DETECT, DIAGNOSE, GUARDRAIL, EXECUTE
     action = Column(String, nullable=True)
     details = Column(Text, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     transaction = relationship("Transaction", back_populates="audit_events")
 
