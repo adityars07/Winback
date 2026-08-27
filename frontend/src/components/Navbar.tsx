@@ -1,12 +1,14 @@
 import React from 'react';
 import { ArrowRight, Play, ShieldCheck, Zap, Upload, RefreshCw, Mic } from 'lucide-react';
 
+import { BrandLogo } from './BrandLogo';
+
 interface NavbarProps {
   onRunBatch: () => void;
   onOpenUpload: () => void;
   onOpenVoiceModal: () => void;
-  onScrollToSection: (id: string) => void;
   isProcessing: boolean;
+  onScrollToSection: (sectionId: string) => void;
   activeView: 'landing' | 'console';
   setActiveView: (view: 'landing' | 'console') => void;
 }
@@ -15,8 +17,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRunBatch,
   onOpenUpload,
   onOpenVoiceModal,
-  onScrollToSection,
   isProcessing,
+  onScrollToSection,
   activeView,
   setActiveView,
 }) => {
@@ -27,16 +29,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="nav-left">
             <a
               href="#hero"
-              className="brand-logo"
+              style={{ textDecoration: 'none' }}
               onClick={(e) => {
                 e.preventDefault();
                 setActiveView('landing');
                 onScrollToSection('hero');
               }}
             >
-              <span>win</span>
-              <span className="highlight">back</span>
-              <span className="brand-badge">RECOVERY</span>
+              <BrandLogo variant="light" size="md" />
             </a>
 
             <ul className="nav-links">

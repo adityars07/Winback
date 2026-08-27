@@ -1,5 +1,6 @@
 import React from 'react';
-import { Zap, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 
 export const FooterSection: React.FC = () => {
   return (
@@ -8,11 +9,8 @@ export const FooterSection: React.FC = () => {
         <div className="footer-top">
           {/* Brand Info */}
           <div className="footer-brand">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#00E599', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#061A14' }}>
-                <Zap size={16} />
-              </div>
-              <h3 style={{ margin: 0, fontSize: '20px' }}>winback</h3>
+            <div style={{ marginBottom: '14px' }}>
+              <BrandLogo variant="dark" size="lg" />
             </div>
             <p>
               Autonomous AI Payment Recovery Agent & Deterministic Guardrail Policy Engine. Built for the Razorpay Buildathon 2026.
