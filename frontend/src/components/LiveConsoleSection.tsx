@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, RotateCcw, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu, Trash2, Sparkles, AlertTriangle, ShieldAlert, Target } from 'lucide-react';
+import { Play, RotateCcw, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu, Trash2, Sparkles, AlertTriangle, ShieldAlert, Target, Mic } from 'lucide-react';
 import { Transaction, SummaryStats } from '../types';
 import { AnalyticsCharts } from './AnalyticsCharts';
 import { AuditTrailTable } from './AuditTrailTable';
@@ -15,6 +15,7 @@ interface LiveConsoleSectionProps {
   onProcessSingleTxn: (txn_id: string) => void;
   onExport: () => void;
   onOpenUpload: () => void;
+  onOpenVoiceModal: () => void;
   onSelectTxn: (txn: Transaction) => void;
   isProcessing: boolean;
   progress: { current: number; total: number } | null;
@@ -30,6 +31,7 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
   onProcessSingleTxn,
   onExport,
   onOpenUpload,
+  onOpenVoiceModal,
   onSelectTxn,
   isProcessing,
   progress,
@@ -70,6 +72,16 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
           </div>
 
           <div className="console-actions-group">
+            <button
+              className="btn-console-action"
+              onClick={onOpenVoiceModal}
+              title="Hinglish Voice-Note Recovery Studio & Live Mic"
+              style={{ color: '#38BDF8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+            >
+              <Mic size={13} color="#38BDF8" />
+              <span>Voice Intake AI</span>
+            </button>
+
             <button
               className="btn-console-action"
               onClick={onOpenUpload}

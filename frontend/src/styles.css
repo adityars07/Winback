@@ -1964,6 +1964,17 @@ body {
   color: #FFFFFF;
 }
 
+.voice-card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-card-hover:hover {
+  transform: translateY(-2px);
+  background: rgba(56, 189, 248, 0.08) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.15);
+}
+
 /* Responsive queries */
 @media (max-width: 1024px) {
   .hero-title { font-size: 46px; }

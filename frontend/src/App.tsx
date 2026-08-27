@@ -3,6 +3,7 @@ import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { StatsBar } from './components/StatsBar';
 import { OneViewSection } from './components/OneViewSection';
+import { VoiceIntakeSection } from './components/VoiceIntakeSection';
 import { ComparisonSection } from './components/ComparisonSection';
 import { RecoveryLadderSection } from './components/RecoveryLadderSection';
 import { TestimonialsSection } from './components/TestimonialsSection';
@@ -10,6 +11,7 @@ import { LiveConsoleSection } from './components/LiveConsoleSection';
 import { FooterSection } from './components/FooterSection';
 import { TransactionModal } from './components/TransactionModal';
 import { UploadModal } from './components/UploadModal';
+import { VoiceIntakeModal } from './components/VoiceIntakeModal';
 import { Transaction, SummaryStats } from './types';
 import './styles.css';
 
@@ -18,6 +20,7 @@ export const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [activeView, setActiveView] = useState<'landing' | 'console'>('landing');
@@ -163,6 +166,7 @@ export const App: React.FC = () => {
       <Navbar
         onRunBatch={handleRunBatchStream}
         onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
         onScrollToSection={scrollToSection}
         isProcessing={isProcessing}
         activeView={activeView}
@@ -192,6 +196,13 @@ export const App: React.FC = () => {
         }}
       />
 
+      {/* Voice-Note Intake Section (Hinglish Bilingual AI) */}
+      <VoiceIntakeSection
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+        onSuccess={loadData}
+        onSelectTxn={(txn) => setSelectedTxn(txn)}
+      />
+
       {/* Comparison Section: Legacy Dunning vs Winback */}
       <ComparisonSection />
 
@@ -217,6 +228,7 @@ export const App: React.FC = () => {
         onProcessSingleTxn={handleProcessSingleTxn}
         onExport={handleExport}
         onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
         onSelectTxn={(txn) => setSelectedTxn(txn)}
         isProcessing={isProcessing}
         progress={progress}
@@ -236,6 +248,17 @@ export const App: React.FC = () => {
         onClose={() => setIsUploadOpen(false)}
         onSuccess={loadData}
       />
+
+      <VoiceIntakeModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        onSuccess={loadData}
+        onSelectTxn={(txn) => {
+          setSelectedTxn(txn);
+          setIsVoiceModalOpen(false);
+        }}
+      />
     </div>
   );
 };
+

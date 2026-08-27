@@ -1,9 +1,10 @@
 import React from 'react';
-import { ArrowRight, Play, ShieldCheck, Zap, Upload, RefreshCw } from 'lucide-react';
+import { ArrowRight, Play, ShieldCheck, Zap, Upload, RefreshCw, Mic } from 'lucide-react';
 
 interface NavbarProps {
   onRunBatch: () => void;
   onOpenUpload: () => void;
+  onOpenVoiceModal: () => void;
   onScrollToSection: (id: string) => void;
   isProcessing: boolean;
   activeView: 'landing' | 'console';
@@ -13,6 +14,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   onRunBatch,
   onOpenUpload,
+  onOpenVoiceModal,
   onScrollToSection,
   isProcessing,
   activeView,
@@ -64,6 +66,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </li>
               <li>
                 <a
+                  href="#voice-intake"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setActiveView('landing');
+                    onScrollToSection('voice-intake');
+                  }}
+                  style={{ color: '#38BDF8', fontWeight: 600 }}
+                >
+                  Voice AI 🎙️
+                </a>
+              </li>
+              <li>
+                <a
                   href="#comparison"
                   onClick={(e) => {
                     e.preventDefault();
@@ -84,18 +99,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                 >
                   Recovery Ladder
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#calculator"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveView('landing');
-                    onScrollToSection('ladder');
-                  }}
-                >
-                  ROI Calculator
                 </a>
               </li>
               <li>
@@ -122,6 +125,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="status-dot-pulse" />
               <span>NPCI Guardrails Active</span>
             </div>
+
+            <button
+              className="btn-pill-outline"
+              onClick={onOpenVoiceModal}
+              title="Hinglish Voice-Note Recovery Studio"
+              style={{ borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38BDF8' }}
+            >
+              <Mic size={13} color="#38BDF8" />
+              <span>Voice AI</span>
+            </button>
 
             <button
               className="btn-pill-outline"
