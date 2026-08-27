@@ -30,7 +30,11 @@ from detector import get_pending_batch
 from diagnosis import diagnose_transaction
 from policy import apply_policy
 from executor import execute_action
-from voice_intake import parse_hinglish_voice_transcript, SAMPLE_HINGLISH_TRANSCRIPTS
+from voice_intake import (
+    parse_hinglish_voice_transcript,
+    generate_hinglish_voice_response,
+    SAMPLE_HINGLISH_TRANSCRIPTS,
+)
 
 # Configure Logging
 logging.basicConfig(
@@ -391,6 +395,8 @@ class VoiceIntakeSchema(BaseModel):
     txn_id: str | None = Field(None, json_schema_extra={"example": "TXN-DEMO-001"})
     customer_name: str | None = Field(None, json_schema_extra={"example": "Rahul Verma"})
     amount: float | None = Field(None, json_schema_extra={"example": 3450.0})
+    attempt_number: int | None = Field(None, json_schema_extra={"example": 1})
+    customer_contact_count_48h: int | None = Field(None, json_schema_extra={"example": 0})
 
 
 @app.get("/voice-intake/samples")
@@ -405,11 +411,14 @@ def process_voice_intake(
     db: Session = Depends(get_db)
 ):
     """
-    Hinglish Voice-Note Recovery Intake Endpoint:
-    1. Parses transcribed Hinglish speech via Groq LLM.
-    2. Extracts error_code, promised_date, transaction_type, confidence_level.
+    Hinglish Voice Recovery Agent Endpoint:
+    1. Converts/Parses customer spoken Hinglish speech via Groq LLM.
+    2. Extracts error_code, promised_date, transaction_type, intent, confidence.
     3. Seamlessly routes into the detect -> diagnose -> guardrail -> execute pipeline.
-    4. Returns full visual decision trace.
+    4. Policy engine remains the final authority (Rule 1, Rule 2, Rule 3, Rule 4).
+    5. Executes only approved financial actions.
+    6. Generates a natural, empathetic spoken Hinglish reply based on the REAL outcome.
+    7. Records the complete trace in the immutable audit trail.
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     transcript = payload.transcript.strip()
@@ -446,10 +455,10 @@ def process_voice_intake(
             type=txn_type,
             amount=amount,
             failure_code=err_code,
-            attempt_number=1,
+            attempt_number=payload.attempt_number or 1,
             last_attempt_ts=now,
             mandate_window_end=mandate_end,
-            customer_contact_count_48h=0,
+            customer_contact_count_48h=payload.customer_contact_count_48h or 0,
             status="pending",
         )
         db.add(txn)
@@ -458,6 +467,10 @@ def process_voice_intake(
         txn.failure_code = err_code
         if amount and amount > 0:
             txn.amount = amount
+        if payload.attempt_number is not None:
+            txn.attempt_number = payload.attempt_number
+        if payload.customer_contact_count_48h is not None:
+            txn.customer_contact_count_48h = payload.customer_contact_count_48h
 
     _record_audit(
         db,
@@ -478,7 +491,25 @@ def process_voice_intake(
             except Exception:
                 parsed_promise_date = None
 
-    if parsed_promise_date:
+    # Check if attempts exceed Rule 1 limit even if promise requested
+    if txn.attempt_number > 3:
+        # Policy Rule 1 intercepts before promise
+        final_action = "mark_unrecoverable"
+        guardrail_notes = "⛔ Exceeded max retry attempts (3) — marking unrecoverable."
+        txn.recommended_action = "promise_to_pay"
+        txn.guardrail_notes = guardrail_notes
+        txn.status = "unrecoverable"
+        txn.final_action_taken = "mark_unrecoverable"
+        txn.confidence = extracted.get("confidence_level", "high")
+        txn.diagnosis = f"[Voice Intake] Max attempts reached ({txn.attempt_number}). Unrecoverable."
+        txn.processed_at = now
+
+        _record_audit(db, txn.txn_id, "DIAGNOSE", "promise_to_pay", f"Voice diagnosis: {txn.diagnosis}")
+        _record_audit(db, txn.txn_id, "GUARDRAIL", "mark_unrecoverable", guardrail_notes)
+        _record_audit(db, txn.txn_id, "EXECUTE", "mark_unrecoverable", "Transaction marked unrecoverable by Policy Engine Rule 1.")
+        outcome_msg = f"Policy Rule 1 enforced: {guardrail_notes}"
+
+    elif parsed_promise_date:
         # Route to Promise to Pay flow
         txn.promise_date = parsed_promise_date
         txn.status = "promised"
@@ -514,7 +545,7 @@ def process_voice_intake(
         outcome_msg = f"Voice commitment recorded for {txn.customer_name}: Promised to pay by {parsed_promise_date.strftime('%Y-%m-%d')} (dunning paused)"
 
     else:
-        # Standard Diagnosis -> Guardrail -> Execute Flow
+        # Standard Diagnosis -> Policy Engine -> Execution Flow
         diag = diagnose_transaction(txn)
         txn.diagnosis = f"[Voice Note Intake] {extracted.get('intent_summary', '')} — {diag.get('diagnosis', '')}"
         txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
@@ -551,11 +582,31 @@ def process_voice_intake(
         )
         outcome_msg = outcome.get("message", "")
 
+    # 4. Generate Natural Hinglish Spoken Audio Response from REAL Outcome
+    final_action = txn.final_action_taken or "escalate_to_human"
+    voice_reply = generate_hinglish_voice_response(
+        transcript=transcript,
+        extracted=extracted,
+        guardrail_notes=txn.guardrail_notes or "",
+        final_action=final_action,
+        status=txn.status,
+        outcome_msg=outcome_msg,
+        customer_name=txn.customer_name
+    )
+
+    _record_audit(
+        db,
+        txn.txn_id,
+        "EXECUTE",
+        "voice_agent_reply",
+        f"AI Voice Agent Spoke: \"{voice_reply}\""
+    )
     db.commit()
 
     return {
         "original_transcript": transcript,
         "extracted_data": extracted,
+        "voice_agent_reply": voice_reply,
         "pipeline_result": {
             "txn_id": txn.txn_id,
             "customer_name": txn.customer_name,
@@ -567,6 +618,7 @@ def process_voice_intake(
             "final_action_taken": txn.final_action_taken,
             "recovered_amount": txn.recovered_amount,
             "outcome_message": outcome_msg,
+            "voice_agent_reply": voice_reply,
         },
         "transaction": _txn_to_response(txn),
         "summary": _compute_summary(db)

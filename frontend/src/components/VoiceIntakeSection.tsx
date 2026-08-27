@@ -6,44 +6,53 @@ import {
   CheckCircle2,
   ArrowRight,
   ShieldCheck,
+  ShieldAlert,
   Zap,
   Activity,
   RefreshCw,
   Play,
-  FileAudio,
+  VolumeX,
 } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface VoiceIntakeSectionProps {
   onOpenVoiceModal: () => void;
   onSuccess: () => void;
-  onSelectTxn?: (txn: Transaction) => void;
+  onSelectTxn?: (txn) => void;
 }
 
 const QUICK_VOICE_DEMOS = [
   {
-    title: 'Salary Delay Promise',
+    title: '🟢 Salary Delay (Promise to Pay)',
     tag: 'promise_to_pay',
     color: '#38BDF8',
     text: 'Bhai mera payment fail ho gaya, kal salary aayegi, 28 tarikh ko retry karna.',
+    attempts: 1,
+    contacts: 0,
   },
   {
-    title: 'Card Expired Link',
+    title: '🔵 Card Expired (Send Link)',
     tag: 'send_payment_link',
     color: '#00E599',
     text: 'Arre mera HDFC card expire ho gaya hai. Naya payment link WhatsApp pe bhej do.',
+    attempts: 1,
+    contacts: 0,
   },
   {
-    title: 'UPI Bank Timeout',
+    title: '🟣 UPI Bank Timeout (Auto-Retry)',
     tag: 'retry_payment',
     color: '#A855F7',
     text: 'Maine UPI PIN daala tha par SBI server timeout ho gaya. Standby route se retry karo.',
+    attempts: 1,
+    contacts: 0,
   },
   {
-    title: 'B2B Invoice Overdue',
-    tag: 'escalate_to_human',
-    color: '#F59E0B',
-    text: 'Hamara ₹65,000 ka corporate invoice pending hai, accounts team se baat karwao.',
+    title: '⛔ Policy Block: Max Retries (Rule 1)',
+    tag: 'mark_unrecoverable',
+    color: '#FB7185',
+    text: 'Bhai ek aur baar retry karke dekh lo please, shayad is baar pass ho jaye.',
+    attempts: 4,
+    contacts: 0,
   },
 ];
 
@@ -52,11 +61,31 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
   onSuccess,
   onSelectTxn,
 }) => {
-  const [quickInput, setQuickInput] = useState<string>(QUICK_VOICE_DEMOS[0].text);
   const [loading, setLoading] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<any | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
-  const handleQuickExecute = async (transcriptText: string) => {
+  const speakAudio = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    const voices = window.speechSynthesis.getVoices();
+    const indianVoice = voices.find(
+      (v) => v.lang === 'hi-IN' || v.lang === 'en-IN' || v.name.includes('India') || v.name.includes('Hindi')
+    );
+    if (indianVoice) utterance.voice = indianVoice;
+    utterance.onstart = () => setIsPlaying(true);
+    utterance.onend = () => setIsPlaying(false);
+    utterance.onerror = () => setIsPlaying(false);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleQuickExecute = async (demo: typeof QUICK_VOICE_DEMOS[0]) => {
     setLoading(true);
     setLastResult(null);
     try {
@@ -64,15 +93,20 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: transcriptText,
+          transcript: demo.text,
           customer_name: 'Voice Demo Merchant',
           amount: 4999.0,
+          attempt_number: demo.attempts,
+          customer_contact_count_48h: demo.contacts,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         setLastResult(data);
         onSuccess();
+        if (data.voice_agent_reply) {
+          setTimeout(() => speakAudio(data.voice_agent_reply), 300);
+        }
       }
     } catch (e) {
       console.error('Quick voice error:', e);
@@ -97,13 +131,13 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
             <div style={{ maxWidth: '680px' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38BDF8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>
                 <Mic size={13} />
-                <span>New Feature • Hinglish Voice-Note Recovery</span>
+                <span>Conversational AI • Hinglish Voice Recovery Agent</span>
               </div>
               <h2 style={{ fontSize: '28px', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.6px', margin: '0 0 8px 0' }}>
-                Voice Note In, Compliant Recovery Action Out
+                "Talk to Winback" — Voice Note In, Compliant Action Out
               </h2>
               <p style={{ fontSize: '14px', color: 'var(--text-light-muted)', lineHeight: 1.5, margin: 0 }}>
-                Customers in India communicate payment delays via WhatsApp audio notes in Hinglish. Winback's Groq AI translates conversational nuance into structured failure codes and promised payment dates, executing NPCI-compliant actions in under 200ms.
+                Customers in India communicate payment problems via voice notes in conversational Hinglish. Winback's Groq AI understands intent, enforces deterministic Policy Guardrails, executes approved actions, and speaks back in Hinglish.
               </p>
             </div>
 
@@ -111,10 +145,10 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
               <button
                 className="btn-pill-dark"
                 onClick={onOpenVoiceModal}
-                style={{ background: '#38BDF8', color: '#04120D', borderColor: '#38BDF8', fontWeight: 700 }}
+                style={{ background: '#38BDF8', color: '#04120D', borderColor: '#38BDF8', fontWeight: 700, padding: '10px 20px', fontSize: '13px' }}
               >
-                <Mic size={14} />
-                <span>Open Voice Studio & Mic</span>
+                <Mic size={15} />
+                <span>Talk to Winback 🎙️</span>
               </button>
             </div>
           </div>
@@ -124,10 +158,7 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
             {QUICK_VOICE_DEMOS.map((demo, idx) => (
               <div
                 key={idx}
-                onClick={() => {
-                  setQuickInput(demo.text);
-                  handleQuickExecute(demo.text);
-                }}
+                onClick={() => handleQuickExecute(demo)}
                 style={{
                   background: 'rgba(255, 255, 255, 0.03)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -149,7 +180,7 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#38BDF8', fontWeight: 600 }}>
                   <Play size={11} fill="#38BDF8" />
-                  <span>Click to Test Live Flow</span>
+                  <span>Click to Test Full Voice Loop</span>
                 </div>
               </div>
             ))}
@@ -159,36 +190,57 @@ export const VoiceIntakeSection: React.FC<VoiceIntakeSectionProps> = ({
           {loading && (
             <div style={{ textAlign: 'center', padding: '20px', color: '#38BDF8', fontSize: '13px' }}>
               <RefreshCw size={18} className="animate-spin" style={{ margin: '0 auto 8px auto' }} />
-              <div>Groq AI Parsing Hinglish Transcript & Enforcing Guardrails...</div>
+              <div>Groq AI Parsing Hinglish $\rightarrow$ Policy Engine Guardrail Check $\rightarrow$ Executor...</div>
             </div>
           )}
 
           {lastResult && (
-            <div style={{ background: 'rgba(0, 229, 153, 0.05)', border: '1px solid rgba(0, 229, 153, 0.3)', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <CheckCircle2 size={22} color="#00E599" />
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#00E599' }}>
-                    Executed Action: {lastResult.pipeline_result?.final_action_taken} ({lastResult.pipeline_result?.status})
+            <div style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <CheckCircle2 size={22} color="#00E599" />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#FFFFFF' }}>
+                      Approved Action: <span style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{lastResult.pipeline_result?.final_action_taken}</span> ({lastResult.pipeline_result?.status})
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#34D399' }}>
+                      {lastResult.pipeline_result?.guardrail_notes}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '11.5px', color: '#A3B8B0' }}>
-                    {lastResult.extracted_data?.intent_summary}
-                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span className={`status-badge-obsidian ${lastResult.pipeline_result?.status}`}>
+                    {lastResult.pipeline_result?.status}
+                  </span>
+                  <button
+                    className="btn-pill-outline"
+                    onClick={onOpenVoiceModal}
+                    style={{ fontSize: '11px', padding: '6px 12px', borderColor: 'rgba(255,255,255,0.2)' }}
+                  >
+                    Open Voice Studio →
+                  </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span className={`status-badge-obsidian ${lastResult.pipeline_result?.status}`}>
-                  {lastResult.pipeline_result?.status}
-                </span>
-                <button
-                  className="btn-pill-outline"
-                  onClick={onOpenVoiceModal}
-                  style={{ fontSize: '11px', padding: '6px 12px', borderColor: 'rgba(255,255,255,0.2)' }}
-                >
-                  View Full Detail Trace →
-                </button>
-              </div>
+              {/* Spoken Voice Response Banner */}
+              {lastResult.voice_agent_reply && (
+                <div style={{ background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Volume2 size={16} color="#38BDF8" />
+                    <span style={{ fontSize: '12px', color: '#E2E8F0', fontStyle: 'italic' }}>
+                      "{lastResult.voice_agent_reply}"
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => speakAudio(lastResult.voice_agent_reply)}
+                    style={{ background: '#38BDF8', color: '#04120D', border: 'none', borderRadius: '14px', padding: '4px 10px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    {isPlaying ? 'Stop' : 'Replay 🔊'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

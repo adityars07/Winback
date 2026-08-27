@@ -1,8 +1,9 @@
 """
-Winback — Hinglish Voice-Note Recovery Intake Module
+Winback — Hinglish Voice Recovery Agent Module
 Parses spoken/transcribed customer audio in Hinglish (Hindi + English) via Groq LLM,
-extracts payment failure codes, promise-to-pay commitments, and routes directly
-into the closed-loop Winback diagnosis -> guardrail -> execute pipeline.
+extracts payment failure codes & promise-to-pay commitments, routes into the closed-loop
+Winback diagnosis -> policy guardrail -> execution pipeline, and generates empathetic
+Hinglish spoken audio responses based on the actual outcome.
 """
 
 import json
@@ -42,42 +43,95 @@ Output format: Respond with ONLY a JSON object with keys:
 - intent_summary (concise 1-sentence English translation of customer's intent)
 No markdown fences, no other text."""
 
-# ── 5 Curated Sample Hinglish Transcripts for Live Demo ──────────────────────
+VOICE_RESPONSE_SYSTEM_PROMPT = """You are Winback, an intelligent and empathetic AI Voice Recovery Agent speaking directly to an Indian merchant customer in natural, conversational Hinglish (Hindi + English).
+
+The deterministic Policy Engine and Executor have already processed the customer's request and finalized the action.
+Your job is to speak directly to the customer in 1 to 2 clear, polite, and reassuring sentences (maximum 35 words).
+
+Guidelines:
+- Acknowledge their issue politely (use customer name with 'ji' if available).
+- Explain clearly what action was taken (e.g. payment link sent on WhatsApp, dunning paused until promise date, standby route retry initiated, or escalated to human manager).
+- If an action was blocked/escalated due to safety limits (e.g. retries exceeded or contact limit reached), reassure them that a human specialist is assisting them.
+- Respond with plain spoken text ONLY. No quotation marks, no bullet points, no markdown, no emojis (so speech synthesizer speaks smoothly)."""
+
+# ── 7 Curated Sample Hinglish Transcripts for Live Demo (Success + Policy Blocks) ──
 SAMPLE_HINGLISH_TRANSCRIPTS = [
     {
         "id": "demo_voice_1",
-        "title": "Salary Delay (Promise to Pay Tomorrow)",
+        "title": "🟢 Salary Delay (Promise to Pay)",
+        "scenario": "Customer promises to pay on salary date. System pauses dunning until promise date.",
         "transcript": "Bhai mera payment fail ho gaya, account mein balance nahi tha. Kal meri salary aayegi, 28 tarikh ko phir se retry karna, pakka ho jayega.",
         "expected_error": "insufficient_funds",
         "expected_action": "promise_to_pay",
+        "test_type": "success",
+        "attempt_number": 1,
+        "contact_count_48h": 0,
     },
     {
         "id": "demo_voice_2",
-        "title": "Expired Card (Request 1-Click Update Link)",
+        "title": "🔵 Card Expired (Send Payment Link)",
+        "scenario": "Card expired. System generates and sends 1-click payment link via WhatsApp.",
         "transcript": "Arre mera HDFC card expire ho gaya hai pichle hafte. Naya payment link WhatsApp pe bhej do, main naye card se abhi pay kar deta hoon.",
         "expected_error": "card_expired",
         "expected_action": "send_payment_link",
+        "test_type": "success",
+        "attempt_number": 1,
+        "contact_count_48h": 0,
     },
     {
         "id": "demo_voice_3",
-        "title": "Bank Timeout (Auto-Retry on Alternate Route)",
+        "title": "🟣 Bank Timeout (Auto-Retry on Alternate Route)",
+        "scenario": "Bank gateway timed out. System auto-retries via standby route.",
         "transcript": "Maine UPI PIN daala tha par SBI ka server timeout ho gaya. Paisa nahi kata mere bank se, ek baar standby route se auto-retry maar do.",
         "expected_error": "bank_timeout",
         "expected_action": "retry_payment",
+        "test_type": "success",
+        "attempt_number": 1,
+        "contact_count_48h": 0,
     },
     {
         "id": "demo_voice_4",
-        "title": "Checkout Drop-off (WhatsApp UPI Intent Nudge)",
-        "transcript": "Checkout pe OTP late aaya toh maine window band kar di thi. Cart mein ₹3,450 ka saman hai, koi working coupon ya Razorpay link WhatsApp pe drop karo.",
-        "expected_error": "checkout_dropoff",
-        "expected_action": "send_reminder_whatsapp",
+        "title": "⛔ Policy Block: Max Retries (Rule 1 Enforcement)",
+        "scenario": "Customer asks for another retry, but attempt # is already 3+. Policy Engine intercepts and marks unrecoverable.",
+        "transcript": "Bhai ek aur baar retry karke dekh lo please, shayad is baar payment pass ho jaye.",
+        "expected_error": "insufficient_funds",
+        "expected_action": "mark_unrecoverable",
+        "test_type": "policy_blocked",
+        "attempt_number": 4,
+        "contact_count_48h": 0,
     },
     {
         "id": "demo_voice_5",
-        "title": "High-Value Corporate Invoice (Finance Team Escalation)",
+        "title": "⛔ Policy Block: Contact Limit Cap (Rule 3 Enforcement)",
+        "scenario": "Customer asks for payment link, but outreach cap (2 in 48h) reached. Policy Engine escalates to human.",
+        "transcript": "Mera card expire hai, ek aur baar WhatsApp pe link drop kardo.",
+        "expected_error": "card_expired",
+        "expected_action": "escalate_to_human",
+        "test_type": "policy_blocked",
+        "attempt_number": 1,
+        "contact_count_48h": 2,
+    },
+    {
+        "id": "demo_voice_6",
+        "title": "🟠 Cart Drop-Off (WhatsApp UPI Intent Nudge)",
+        "scenario": "Checkout abandoned. System sends WhatsApp discount intent nudge.",
+        "transcript": "Checkout pe OTP late aaya toh maine window band kar di thi. Cart mein ₹3,450 ka saman hai, koi working coupon ya Razorpay link WhatsApp pe drop karo.",
+        "expected_error": "checkout_dropoff",
+        "expected_action": "send_reminder_whatsapp",
+        "test_type": "success",
+        "attempt_number": 1,
+        "contact_count_48h": 0,
+    },
+    {
+        "id": "demo_voice_7",
+        "title": "🔴 Corporate Invoice (Key Account Escalation)",
+        "scenario": "High-value B2B invoice ₹65,000. System escalates to dedicated human account manager.",
         "transcript": "Hamara ₹65,000 ka corporate annual invoice pending hai. Hamari finance team vendor onboarding verify kar rahi hai, accounts manager se baat karwao please.",
         "expected_error": "invoice_overdue",
         "expected_action": "escalate_to_human",
+        "test_type": "success",
+        "attempt_number": 1,
+        "contact_count_48h": 0,
     },
 ]
 
@@ -104,7 +158,7 @@ def _fallback_voice_parser(transcript: str, ref_date: datetime) -> dict:
     elif any(k in text_lower for k in ["invoice", "corporate", "b2b", "vendor", "po", "accounts manager"]):
         error_code = "invoice_overdue"
         txn_type = "invoice_overdue"
-    elif any(k in text_lower for k in ["salary", "balance", "khali", "funds", "insufficient", "paisa nahi tha", "paisa nahi hai"]):
+    elif any(k in text_lower for k in ["salary", "balance", "khali", "funds", "insufficient", "paisa nahi tha", "paisa nahi hai", "retry"]):
         error_code = "insufficient_funds"
         txn_type = "subscription_renewal"
     else:
@@ -203,3 +257,83 @@ def parse_hinglish_voice_transcript(transcript: str, reference_date: datetime | 
     except Exception as e:
         logger.warning(f"Groq voice transcript parsing failed: {e}. Using deterministic fallback.")
         return _fallback_voice_parser(transcript, reference_date)
+
+
+def _fallback_voice_response(
+    extracted: dict,
+    final_action: str,
+    status: str,
+    customer_name: str,
+    guardrail_notes: str
+) -> str:
+    """Deterministic fallback voice response for offline, testing, or rate-limited modes."""
+    name_str = f"{customer_name} ji" if customer_name and customer_name != "Voice Customer" else "ji"
+    p_date = extracted.get("promised_date")
+
+    if final_action == "promise_to_pay" and p_date:
+        return f"Dhanyawad {name_str}! Humne aapka payment promise {p_date} tak record kar liya hai. Tab tak sabhi dunning notifications pause rahenge."
+    elif final_action == "send_payment_link":
+        return f"Bilkul {name_str}, humne aapke WhatsApp aur registered email par 1-click secure payment link bhej diya hai. Aap naye card se turant pay kar sakte hain."
+    elif final_action == "retry_payment":
+        return f"Theek hai {name_str}, humne alternate backup gateway route se auto-retry execute kar diya hai. Aapka payment successfully recover ho gaya hai."
+    elif final_action == "send_reminder_whatsapp":
+        return f"Dhanyawad {name_str}! Humne aapke cart checkout ka WhatsApp reminder link bhej diya hai jisse aap order complete kar sakte hain."
+    elif final_action == "escalate_to_human":
+        return f"Dhanyawad {name_str}. Aapki account safety ke liye humne aapka case senior support manager ko assign kar diya hai, wo aapse jald hi sampark karenge."
+    elif final_action == "mark_unrecoverable":
+        return f"Humne check kiya hai ki max retry attempts reach ho chuke hain. Hamari collections team aapse manually connect karegi."
+    else:
+        return f"Dhanyawad {name_str}. Aapka payment status update kar diya gaya hai."
+
+
+def generate_hinglish_voice_response(
+    transcript: str,
+    extracted: dict,
+    guardrail_notes: str,
+    final_action: str,
+    status: str,
+    outcome_msg: str,
+    customer_name: str = "Customer"
+) -> str:
+    """
+    Generates a natural, conversational Hinglish audio speech response based on the actual
+    Policy Engine and Execution outcome.
+    """
+    # Fast-path for automated pytest runs
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return _fallback_voice_response(extracted, final_action, status, customer_name, guardrail_notes)
+
+    client = _get_groq_client()
+    if client is None:
+        return _fallback_voice_response(extracted, final_action, status, customer_name, guardrail_notes)
+
+    context_prompt = (
+        f"Customer Spoke: \"{transcript}\"\n"
+        f"Customer Name: {customer_name}\n"
+        f"Extracted Issue: {extracted.get('error_code')} (Intent: {extracted.get('intent_summary')})\n"
+        f"Promised Date: {extracted.get('promised_date') or 'None'}\n"
+        f"Policy Engine Guardrail: {guardrail_notes}\n"
+        f"Final Executed Action: {final_action}\n"
+        f"Execution Outcome: {outcome_msg}\n\n"
+        f"Generate the spoken Hinglish response now (max 35 words, plain text only):"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=PRIMARY_MODEL,
+            messages=[
+                {"role": "system", "content": VOICE_RESPONSE_SYSTEM_PROMPT},
+                {"role": "user", "content": context_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=80,
+        )
+        content = response.choices[0].message.content.strip()
+        # Clean up any surrounding quotes or markdown
+        content = re.sub(r'^["\']|["\']$', '', content).strip()
+        if content:
+            return content
+    except Exception as e:
+        logger.warning(f"Groq voice response generation failed: {e}. Using deterministic fallback.")
+
+    return _fallback_voice_response(extracted, final_action, status, customer_name, guardrail_notes)
