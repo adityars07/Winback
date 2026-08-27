@@ -91,6 +91,13 @@ def execute_action(txn: Transaction, final_action: str) -> dict:
             outcome["success"] = True
             outcome["message"] = f"Sent interactive WhatsApp UPI 1-click intent to {txn.customer_id} for INR {txn.amount:,.2f} - converted & RECOVERED"
 
+    elif final_action == "promise_to_pay":
+        txn.status = "promised"
+        txn.recovered_amount = 0.0
+        date_str = txn.promise_date.strftime("%Y-%m-%d") if getattr(txn, "promise_date", None) else "committed date"
+        outcome["success"] = True
+        outcome["message"] = f"Customer commitment recorded for {txn.customer_id}: Promised to pay by {date_str} (dunning paused)"
+
     elif final_action == "escalate_to_human":
         txn.status = "escalated"
         txn.recovered_amount = 0.0

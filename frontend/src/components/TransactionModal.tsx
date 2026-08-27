@@ -84,6 +84,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="detail-label-luxury">Outreach (48h Buffer)</div>
             <div className="detail-val-luxury">{transaction.customer_contact_count_48h} contacts</div>
           </div>
+
+          {transaction.promise_date && (
+            <div className="detail-group-luxury" style={{ borderLeft: '2px solid #38BDF8', paddingLeft: '8px' }}>
+              <div className="detail-label-luxury">Promise Due Date</div>
+              <div className="detail-val-luxury" style={{ color: '#38BDF8', fontFamily: 'monospace' }}>
+                {new Date(transaction.promise_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+          )}
+
+          {Boolean(transaction.is_broken_promise) && (
+            <div className="detail-group-luxury" style={{ borderLeft: '2px solid #FB7185', paddingLeft: '8px' }}>
+              <div className="detail-label-luxury">Commitment Status</div>
+              <div className="detail-val-luxury" style={{ color: '#FB7185', fontWeight: 700 }}>
+                ⚠️ Broken Promise
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action Decision Diff */}

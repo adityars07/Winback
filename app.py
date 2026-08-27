@@ -77,6 +77,8 @@ def _txn_to_response(txn: Transaction) -> dict:
         "mandate_window_end": txn.mandate_window_end.isoformat() if txn.mandate_window_end else None,
         "customer_contact_count_48h": txn.customer_contact_count_48h,
         "status": txn.status,
+        "promise_date": txn.promise_date.isoformat() if getattr(txn, "promise_date", None) else None,
+        "is_broken_promise": int(getattr(txn, "is_broken_promise", 0) or 0),
         "diagnosis": txn.diagnosis,
         "recommended_action": txn.recommended_action,
         "confidence": txn.confidence,
@@ -106,8 +108,8 @@ def _compute_summary(db: Session) -> dict:
     total_at_risk = round(sum(t.amount for t in all_txns), 2)
     total_recovered = round(sum(t.recovered_amount for t in all_txns), 2)
 
-    status_counts = {"recovered": 0, "escalated": 0, "unrecoverable": 0, "pending": 0}
-    status_amounts = {"recovered": 0.0, "escalated": 0.0, "unrecoverable": 0.0, "pending": 0.0}
+    status_counts = {"recovered": 0, "escalated": 0, "unrecoverable": 0, "promised": 0, "pending": 0}
+    status_amounts = {"recovered": 0.0, "escalated": 0.0, "unrecoverable": 0.0, "promised": 0.0, "pending": 0.0}
 
     for t in all_txns:
         st = t.status if t.status in status_counts else "pending"
@@ -121,6 +123,11 @@ def _compute_summary(db: Session) -> dict:
     effective_recovery_rate = round((total_recovered / recoverable_revenue * 100), 2) if recoverable_revenue > 0 else 0.0
     # Gross Recovery Rate: % of gross failed pipeline won back
     gross_recovery_rate = round((total_recovered / total_at_risk * 100), 2) if total_at_risk > 0 else 0.0
+
+    # Promise metrics
+    total_promises = sum(1 for t in all_txns if getattr(t, "promise_date", None) is not None or t.final_action_taken == "promise_to_pay" or getattr(t, "is_broken_promise", 0) > 0)
+    broken_promises = sum(1 for t in all_txns if getattr(t, "is_broken_promise", 0) > 0)
+    broken_promise_rate = round((broken_promises / total_promises * 100), 2) if total_promises > 0 else 0.0
 
     # Policy / guardrail metrics
     guardrail_blocks = sum(1 for t in all_txns if t.guardrail_notes and "⛔" in t.guardrail_notes)
@@ -148,6 +155,9 @@ def _compute_summary(db: Session) -> dict:
         "effective_recovery_rate": effective_recovery_rate,
         "gross_recovery_rate": gross_recovery_rate,
         "total_transactions": len(all_txns),
+        "total_promises": total_promises,
+        "broken_promises": broken_promises,
+        "broken_promise_rate": broken_promise_rate,
         "status_counts": status_counts,
         "status_amounts": status_amounts,
         "action_counts": action_counts,
@@ -176,6 +186,203 @@ class CreateTransactionSchema(BaseModel):
     attempt_number: int = Field(1, json_schema_extra={"example": 1})
     customer_contact_count_48h: int = Field(0, json_schema_extra={"example": 0})
     mandate_window_end_days: float | None = Field(None, json_schema_extra={"example": 5.0})
+
+
+class PromiseWebhookSchema(BaseModel):
+    transaction_id: str | None = Field(None, json_schema_extra={"example": "txn_1042"})
+    txn_id: str | None = Field(None, json_schema_extra={"example": "txn_1042"})
+    promised_date: str = Field(..., json_schema_extra={"example": "2026-09-05T00:00:00"})
+
+
+class EvaluatePromisesSchema(BaseModel):
+    current_time: str | None = Field(None, json_schema_extra={"example": "2026-09-10T00:00:00"})
+    force_evaluate_all: bool = Field(False, json_schema_extra={"example": True})
+    simulate_paid_txn_ids: list[str] = Field(default_factory=list, json_schema_extra={"example": ["txn_1042"]})
+    simulate_default_paid: bool = Field(False, json_schema_extra={"example": False})
+
+
+@app.post("/webhook/promise-to-pay")
+@app.post("/transactions/promise")
+def record_promise_to_pay(
+    payload: PromiseWebhookSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Webhook/Endpoint to record customer commitment to pay by a specific date.
+    Transitions status to 'promised', logs audit event, and pauses automated dunning.
+    """
+    target_id = payload.transaction_id or payload.txn_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Missing transaction_id or txn_id in request body.")
+    
+    txn = db.query(Transaction).filter(Transaction.txn_id == target_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail=f"Transaction '{target_id}' not found.")
+
+    try:
+        if "T" in payload.promised_date:
+            p_date = datetime.fromisoformat(payload.promised_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        else:
+            p_date = datetime.strptime(payload.promised_date, "%Y-%m-%d")
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Invalid date format '{payload.promised_date}': {err}")
+
+    txn.promise_date = p_date
+    txn.status = "promised"
+    txn.final_action_taken = "promise_to_pay"
+    txn.recovered_amount = 0.0
+    txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    _record_audit(
+        db,
+        txn.txn_id,
+        "EXECUTE",
+        "promise_to_pay",
+        f"Customer commitment recorded: Promised to pay by {p_date.strftime('%Y-%m-%d')}. Automated dunning paused.",
+        commit=True
+    )
+
+    return {
+        "message": f"Promise to pay recorded for transaction {txn.txn_id}. Status updated to 'promised' and dunning paused until {p_date.strftime('%Y-%m-%d')}.",
+        "transaction": _txn_to_response(txn),
+        "summary": _compute_summary(db)
+    }
+
+
+@app.post("/transactions/{txn_id}/promise")
+def record_promise_single_url(
+    txn_id: str,
+    payload: PromiseWebhookSchema,
+    db: Session = Depends(get_db)
+):
+    payload.transaction_id = txn_id
+    return record_promise_to_pay(payload, db)
+
+
+@app.post("/promises/evaluate")
+@app.post("/simulate/evaluate-promises")
+def evaluate_promises(
+    payload: EvaluatePromisesSchema | None = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates all 'promised' transactions past their promise_date (or all if force_evaluate_all=True).
+    - If paid (in simulate_paid_txn_ids or simulate_default_paid): marks recovered.
+    - If not paid (broken promise): increments attempt_number, sets broken_promise context,
+      and re-runs through the diagnose -> guardrail -> execute pipeline.
+    """
+    if payload is None:
+        payload = EvaluatePromisesSchema()
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if payload.current_time:
+        try:
+            if "T" in payload.current_time:
+                now = datetime.fromisoformat(payload.current_time.replace("Z", "+00:00")).replace(tzinfo=None)
+            else:
+                now = datetime.strptime(payload.current_time, "%Y-%m-%d")
+        except Exception as e:
+            logger.warning(f"Failed to parse custom current_time: {e}")
+
+    promised_txns = db.query(Transaction).filter(Transaction.status == "promised").all()
+    evaluated = []
+
+    for txn in promised_txns:
+        is_past = (txn.promise_date is not None and now >= txn.promise_date)
+        if not is_past and not payload.force_evaluate_all:
+            continue
+
+        is_paid = (txn.txn_id in payload.simulate_paid_txn_ids) or payload.simulate_default_paid
+
+        if is_paid:
+            # Fulfilled promise
+            txn.status = "recovered"
+            txn.recovered_amount = txn.amount
+            txn.processed_at = now
+            _record_audit(
+                db,
+                txn.txn_id,
+                "EXECUTE",
+                "promise_fulfilled",
+                f"Promise fulfilled: Customer completed payment of INR {txn.amount:,.2f} on schedule - RECOVERED"
+            )
+            evaluated.append({
+                "txn_id": txn.txn_id,
+                "status": "recovered",
+                "recovered_amount": txn.amount,
+                "message": f"Promise fulfilled for INR {txn.amount:,.2f}."
+            })
+        else:
+            # Broken promise
+            txn.is_broken_promise = 1
+            txn.attempt_number += 1
+            p_date_str = txn.promise_date.strftime('%Y-%m-%d') if txn.promise_date else "deadline"
+            
+            _record_audit(
+                db,
+                txn.txn_id,
+                "DETECT",
+                "broken_promise",
+                f"Broken promise detected past commitment date ({p_date_str}). Customer did not pay. Re-entering recovery pipeline (Attempt #{txn.attempt_number})."
+            )
+
+            # Re-enter pipeline at DIAGNOSE
+            diag = diagnose_transaction(txn)
+            txn.diagnosis = f"[Broken Promise] {diag.get('diagnosis', '')}"
+            txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
+            txn.confidence = diag.get("confidence", "medium")
+
+            _record_audit(
+                db,
+                txn.txn_id,
+                "DIAGNOSE",
+                txn.recommended_action,
+                f"Broken promise re-diagnosis: LLM recommended '{txn.recommended_action}' ({txn.confidence} confidence): {txn.diagnosis}"
+            )
+
+            # Guardrail Check
+            final_action, guardrail_notes = apply_policy(txn, txn.recommended_action)
+            txn.guardrail_notes = guardrail_notes
+
+            _record_audit(
+                db,
+                txn.txn_id,
+                "GUARDRAIL",
+                final_action,
+                f"Policy Engine output on broken promise: {guardrail_notes}"
+            )
+
+            # Execute
+            if final_action == "retry_payment":
+                txn.attempt_number -= 1  # execute_action will increment it on retry
+            outcome = execute_action(txn, final_action)
+            txn.processed_at = now
+
+            _record_audit(
+                db,
+                txn.txn_id,
+                "EXECUTE",
+                final_action,
+                outcome.get("message", "")
+            )
+
+            evaluated.append({
+                "txn_id": txn.txn_id,
+                "status": txn.status,
+                "outcome": outcome,
+                "guardrail_notes": guardrail_notes,
+                "attempt_number": txn.attempt_number,
+                "message": f"Broken promise processed: {outcome.get('message', '')}"
+            })
+
+    db.commit()
+    summary = _compute_summary(db)
+    return {
+        "message": f"Evaluated {len(evaluated)} promised transactions.",
+        "evaluated_count": len(evaluated),
+        "results": evaluated,
+        "summary": summary
+    }
 
 
 @app.get("/transactions")
@@ -535,7 +742,7 @@ def export_csv(db: Session = Depends(get_db)):
     writer.writerow([
         "Txn ID", "Customer ID", "Customer Name", "Customer Email", "Type",
         "Amount (INR)", "Failure Code", "Attempt Number", "Contact Count 48h",
-        "Status", "Diagnosis", "Recommended Action", "Confidence",
+        "Status", "Promise Date", "Is Broken Promise", "Diagnosis", "Recommended Action", "Confidence",
         "Guardrail Notes", "Final Action Taken", "Recovered Amount (INR)", "Processed At"
     ])
     
@@ -543,7 +750,9 @@ def export_csv(db: Session = Depends(get_db)):
         writer.writerow([
             t.txn_id, t.customer_id, t.customer_name or "", t.customer_email or "", t.type,
             t.amount, t.failure_code, t.attempt_number, t.customer_contact_count_48h,
-            t.status, t.diagnosis or "", t.recommended_action or "", t.confidence or "",
+            t.status, t.promise_date.isoformat() if t.promise_date else "",
+            "Yes" if getattr(t, "is_broken_promise", 0) else "No",
+            t.diagnosis or "", t.recommended_action or "", t.confidence or "",
             t.guardrail_notes or "", t.final_action_taken or "", t.recovered_amount,
             t.processed_at.isoformat() if t.processed_at else ""
         ])

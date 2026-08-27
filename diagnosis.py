@@ -29,6 +29,7 @@ VALID_ACTIONS = {
     "retry_payment",
     "send_payment_link",
     "send_reminder_whatsapp",
+    "promise_to_pay",
     "escalate_to_human",
     "mark_unrecoverable",
 }
@@ -63,6 +64,8 @@ def _txn_to_dict(txn: Transaction) -> dict:
         "last_attempt_ts": txn.last_attempt_ts.isoformat() if txn.last_attempt_ts else None,
         "mandate_window_end": txn.mandate_window_end.isoformat() if txn.mandate_window_end else None,
         "customer_contact_count_48h": txn.customer_contact_count_48h,
+        "promise_date": txn.promise_date.isoformat() if getattr(txn, "promise_date", None) else None,
+        "is_broken_promise": bool(getattr(txn, "is_broken_promise", 0)),
     }
 
 
@@ -71,26 +74,24 @@ def _fallback_diagnosis(txn: Transaction, reason: str = "Rule-based heuristic") 
     code = txn.failure_code
     attempts = txn.attempt_number
     contacts = txn.customer_contact_count_48h
+    is_broken = bool(getattr(txn, "is_broken_promise", 0)) or "broken_promise" in (txn.diagnosis or "")
+    broken_tag = "Broken promise: " if is_broken else ""
 
-    if attempts >= 3 or contacts >= 2:
-        action = "escalate_to_human"
-        diagnosis = f"Multiple attempts ({attempts}) or outreach ({contacts}) recorded. Escalating for manual intervention."
-        confidence = "medium"
-    elif code in ("insufficient_funds", "bank_timeout") and attempts < 3:
+    if code in ("insufficient_funds", "bank_timeout"):
         action = "retry_payment"
-        diagnosis = f"Transient {code.replace('_', ' ')} error on attempt #{attempts}. Auto-retry recommended."
+        diagnosis = f"{broken_tag}Transient {code.replace('_', ' ')} error on attempt #{attempts}. Auto-retry recommended."
         confidence = "high"
     elif code in ("card_expired", "mandate_declined"):
         action = "send_payment_link"
-        diagnosis = f"Instrument issue ({code.replace('_', ' ')}). Customer needs to update payment details via link."
+        diagnosis = f"{broken_tag}Instrument issue ({code.replace('_', ' ')}). Customer needs to update payment details via link."
         confidence = "high"
     elif code == "checkout_dropoff":
         action = "send_reminder_whatsapp"
-        diagnosis = "Checkout session abandoned by customer. Nudge via WhatsApp recommended."
+        diagnosis = f"{broken_tag}Checkout session abandoned by customer. Nudge via WhatsApp recommended."
         confidence = "high"
     else:
         action = "escalate_to_human"
-        diagnosis = f"Unresolved {code} issue. Escalated to human operator."
+        diagnosis = f"{broken_tag}Unresolved {code} issue. Escalated to human operator."
         confidence = "low"
 
     return {
@@ -118,6 +119,7 @@ def diagnose_transaction(txn: Transaction) -> dict:
         txn.failure_code,
         min(txn.attempt_number, 4),
         min(txn.customer_contact_count_48h, 2),
+        bool(getattr(txn, "is_broken_promise", 0)),
     )
     if cache_key in _diagnosis_cache:
         return dict(_diagnosis_cache[cache_key])

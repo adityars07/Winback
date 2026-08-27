@@ -34,6 +34,7 @@ class TransactionStatus(str, enum.Enum):
     recovered = "recovered"
     unrecoverable = "unrecoverable"
     escalated = "escalated"
+    promised = "promised"
 
 
 class Transaction(Base):
@@ -51,6 +52,8 @@ class Transaction(Base):
     mandate_window_end = Column(DateTime, nullable=True)
     customer_contact_count_48h = Column(Integer, default=0)
     status = Column(String, default="pending")
+    promise_date = Column(DateTime, nullable=True)
+    is_broken_promise = Column(Integer, default=0)
     diagnosis = Column(String, nullable=True)
     recommended_action = Column(String, nullable=True)
     confidence = Column(String, nullable=True)  # high, medium, low
@@ -77,6 +80,19 @@ class AuditEvent(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Lightweight SQLite auto-migration for new columns
+    try:
+        with engine.connect() as conn:
+            cursor = conn.connection.cursor()
+            cursor.execute("PRAGMA table_info(transactions)")
+            cols = [row[1] for row in cursor.fetchall()]
+            if cols and "promise_date" not in cols:
+                cursor.execute("ALTER TABLE transactions ADD COLUMN promise_date DATETIME")
+            if cols and "is_broken_promise" not in cols:
+                cursor.execute("ALTER TABLE transactions ADD COLUMN is_broken_promise INTEGER DEFAULT 0")
+            conn.connection.commit()
+    except Exception:
+        pass
 
 
 def get_db():

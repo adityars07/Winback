@@ -10,7 +10,9 @@ export interface Transaction {
   last_attempt_ts: string;
   mandate_window_end: string | null;
   customer_contact_count_48h: number;
-  status: 'pending' | 'recovered' | 'unrecoverable' | 'escalated';
+  status: 'pending' | 'recovered' | 'unrecoverable' | 'escalated' | 'promised';
+  promise_date?: string | null;
+  is_broken_promise?: number;
   diagnosis: string | null;
   recommended_action: string | null;
   confidence: 'high' | 'medium' | 'low' | null;
@@ -43,6 +45,9 @@ export interface SummaryStats {
   effective_recovery_rate: number;
   gross_recovery_rate: number;
   total_transactions: number;
+  total_promises?: number;
+  broken_promises?: number;
+  broken_promise_rate?: number;
   status_counts: Record<string, number>;
   status_amounts: Record<string, number>;
   action_counts: Record<string, number>;

@@ -120,6 +120,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
           >
             <option value="all">All Statuses</option>
             <option value="pending">Pending</option>
+            <option value="promised">Promised</option>
             <option value="recovered">Recovered</option>
             <option value="escalated">Escalated</option>
             <option value="unrecoverable">Unrecoverable</option>

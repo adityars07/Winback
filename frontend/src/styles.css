@@ -1602,6 +1602,7 @@ body {
 .obsidian-table tr.status-recovered { border-left: 3px solid #00E599; background: rgba(0, 229, 153, 0.04); }
 .obsidian-table tr.status-escalated { border-left: 3px solid #F59E0B; background: rgba(245, 158, 11, 0.04); }
 .obsidian-table tr.status-unrecoverable { border-left: 3px solid #F43F5E; background: rgba(244, 63, 94, 0.04); }
+.obsidian-table tr.status-promised { border-left: 3px solid #38BDF8; background: rgba(56, 189, 248, 0.04); }
 .obsidian-table tr.status-pending { border-left: 3px solid #64748B; }
 
 .mono-hash {
@@ -1683,6 +1684,7 @@ body {
 .status-badge-obsidian.recovered { background: rgba(0, 229, 153, 0.15); color: #00E599; border: 1px solid rgba(0, 229, 153, 0.35); }
 .status-badge-obsidian.escalated { background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); }
 .status-badge-obsidian.unrecoverable { background: rgba(244, 63, 94, 0.15); color: #FB7185; border: 1px solid rgba(244, 63, 94, 0.35); }
+.status-badge-obsidian.promised { background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); }
 .status-badge-obsidian.pending { background: rgba(100, 116, 139, 0.15); color: #94A3B8; border: 1px solid rgba(100, 116, 139, 0.25); }
 
 .pagination-luxury {

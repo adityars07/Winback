@@ -27,7 +27,7 @@ def apply_policy(txn: Transaction, recommended_action: str) -> tuple[str, str]:
     """
 
     # Rule 1: Max retry attempts exceeded
-    if txn.attempt_number > 3 and recommended_action == "retry_payment":
+    if txn.attempt_number > 3 and recommended_action in ("retry_payment", "promise_to_pay"):
         return (
             "mark_unrecoverable",
             "⛔ Exceeded max retry attempts (3)."
