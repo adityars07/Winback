@@ -34,13 +34,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   return (
     <section className="hero-section" id="hero">
       <div className="container">
-        {/* Eyebrow */}
-        <div className="hero-eyebrow">
-          <span className="rzp-tag">⚡ Razorpay Buildathon 2026</span>
-          <span>·</span>
-          <span>AI Revenue Recovery Agent</span>
-        </div>
-
         {/* Main Title (Mirrors Fathom headline) */}
         <h1 className="hero-title">
           Recover lost revenue more efficiently with Winback
