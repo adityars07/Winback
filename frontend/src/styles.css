@@ -1940,17 +1940,25 @@ body {
   margin-top: 3px;
 }
 
-/* Ingestion Modal Dialog (Centered Obsidian Box) */
-.dialog-overlay {
+/* Ingestion and Voice Modal Dialogs (Centered Luxury Obsidian Boxes) */
+.dialog-overlay,
+.modal-backdrop-luxury {
   position: fixed;
-  inset: 0;
-  background: rgba(2, 10, 7, 0.82);
-  backdrop-filter: blur(10px);
-  z-index: 100;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(2, 10, 7, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 
 .dialog-box-luxury {
@@ -1962,6 +1970,16 @@ body {
   padding: 32px;
   box-shadow: 0 24px 70px rgba(0, 10, 6, 0.75), var(--shadow-emerald-glow);
   color: #FFFFFF;
+  position: relative;
+  margin: auto;
+}
+
+.voice-dialog-luxury {
+  width: 820px !important;
+  max-width: 96vw !important;
+  background: #04140F !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  box-shadow: 0 24px 70px rgba(0, 10, 6, 0.85), 0 0 40px rgba(56, 189, 248, 0.12) !important;
 }
 
 .voice-card-hover {

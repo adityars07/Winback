@@ -66,19 +66,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </li>
               <li>
                 <a
-                  href="#voice-intake"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveView('landing');
-                    onScrollToSection('voice-intake');
-                  }}
-                  style={{ color: '#38BDF8', fontWeight: 600 }}
-                >
-                  Voice AI 🎙️
-                </a>
-              </li>
-              <li>
-                <a
                   href="#comparison"
                   onClick={(e) => {
                     e.preventDefault();
@@ -129,11 +116,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               className="btn-pill-outline"
               onClick={onOpenVoiceModal}
-              title="Hinglish Voice-Note Recovery Studio"
-              style={{ borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38BDF8' }}
+              title="Hinglish Voice Recovery Agent (Talk to Winback)"
+              style={{
+                borderColor: 'rgba(56, 189, 248, 0.45)',
+                background: 'rgba(56, 189, 248, 0.08)',
+                color: '#0284C7',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
             >
-              <Mic size={13} color="#38BDF8" />
-              <span>Voice AI</span>
+              <Mic size={14} color="#0284C7" />
+              <span>Talk to Winback</span>
             </button>
 
             <button

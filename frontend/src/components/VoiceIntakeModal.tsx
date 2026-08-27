@@ -315,8 +315,12 @@ export const VoiceIntakeModal: React.FC<VoiceIntakeModalProps> = ({
   };
 
   return (
-    <div className="modal-backdrop-luxury">
-      <div className="dialog-box-luxury" style={{ width: '820px', maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto' }}>
+    <div className="dialog-overlay" onClick={onClose}>
+      <div
+        className="dialog-box-luxury voice-dialog-luxury"
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: '840px', maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }}
+      >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '18px' }}>
           <div>
