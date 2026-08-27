@@ -13,7 +13,7 @@ import traceback
 import re
 import string
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -30,6 +30,7 @@ from detector import get_pending_batch
 from diagnosis import diagnose_transaction
 from policy import apply_policy
 from executor import execute_action
+from voice_intake import parse_hinglish_voice_transcript, SAMPLE_HINGLISH_TRANSCRIPTS
 
 # Configure Logging
 logging.basicConfig(
@@ -382,6 +383,193 @@ def evaluate_promises(
         "evaluated_count": len(evaluated),
         "results": evaluated,
         "summary": summary
+    }
+
+
+class VoiceIntakeSchema(BaseModel):
+    transcript: str = Field(..., json_schema_extra={"example": "Bhai mera payment fail ho gaya, kal salary aayegi, phir try karna"})
+    txn_id: str | None = Field(None, json_schema_extra={"example": "TXN-DEMO-001"})
+    customer_name: str | None = Field(None, json_schema_extra={"example": "Rahul Verma"})
+    amount: float | None = Field(None, json_schema_extra={"example": 3450.0})
+
+
+@app.get("/voice-intake/samples")
+def get_voice_intake_samples():
+    """Returns curated demo Hinglish voice transcripts for live presentation testing."""
+    return {"samples": SAMPLE_HINGLISH_TRANSCRIPTS}
+
+
+@app.post("/voice-intake")
+def process_voice_intake(
+    payload: VoiceIntakeSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Hinglish Voice-Note Recovery Intake Endpoint:
+    1. Parses transcribed Hinglish speech via Groq LLM.
+    2. Extracts error_code, promised_date, transaction_type, confidence_level.
+    3. Seamlessly routes into the detect -> diagnose -> guardrail -> execute pipeline.
+    4. Returns full visual decision trace.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    transcript = payload.transcript.strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Transcript text cannot be empty.")
+
+    # 1. Parse Hinglish via Groq / Fallback
+    extracted = parse_hinglish_voice_transcript(transcript, reference_date=now)
+    err_code = extracted.get("error_code", "insufficient_funds")
+    txn_type = extracted.get("transaction_type", "subscription_renewal")
+    promised_date_str = extracted.get("promised_date")
+    amount = payload.amount or extracted.get("amount_inr") or 4999.0
+    cust_name = payload.customer_name or extracted.get("customer_name") or "Voice Customer"
+
+    # 2. Get or Create Transaction
+    txn = None
+    if payload.txn_id:
+        txn = db.query(Transaction).filter(Transaction.txn_id == payload.txn_id).first()
+
+    if not txn:
+        import string, random
+        txn_id = payload.txn_id or f"txn_voice_{''.join(random.choices(string.ascii_letters + string.digits, k=5))}"
+        cust_id = f"cust_{''.join(random.choices(string.digits, k=4))}"
+        
+        mandate_end = None
+        if txn_type == "subscription_renewal":
+            mandate_end = now + timedelta(days=5)
+
+        txn = Transaction(
+            txn_id=txn_id,
+            customer_id=cust_id,
+            customer_name=cust_name,
+            customer_email=f"{re.sub(r'[^a-zA-Z0-9]', '', cust_name).lower() or 'user'}@voice.in",
+            type=txn_type,
+            amount=amount,
+            failure_code=err_code,
+            attempt_number=1,
+            last_attempt_ts=now,
+            mandate_window_end=mandate_end,
+            customer_contact_count_48h=0,
+            status="pending",
+        )
+        db.add(txn)
+    else:
+        # Update existing txn failure code if clarified by voice
+        txn.failure_code = err_code
+        if amount and amount > 0:
+            txn.amount = amount
+
+    _record_audit(
+        db,
+        txn.txn_id,
+        "DETECT",
+        None,
+        f"Ingested via Hinglish Voice Note: \"{transcript}\" (Classified as: {err_code})"
+    )
+
+    # 3. Closed-Loop Pipeline Routing
+    parsed_promise_date = None
+    if promised_date_str:
+        try:
+            parsed_promise_date = datetime.strptime(promised_date_str, "%Y-%m-%d")
+        except Exception:
+            try:
+                parsed_promise_date = datetime.fromisoformat(promised_date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                parsed_promise_date = None
+
+    if parsed_promise_date:
+        # Route to Promise to Pay flow
+        txn.promise_date = parsed_promise_date
+        txn.status = "promised"
+        txn.recommended_action = "promise_to_pay"
+        txn.final_action_taken = "promise_to_pay"
+        txn.recovered_amount = 0.0
+        txn.confidence = extracted.get("confidence_level", "high")
+        txn.diagnosis = f"[Voice Promise] {extracted.get('intent_summary', '')} Committed to pay by {parsed_promise_date.strftime('%Y-%m-%d')}."
+        txn.guardrail_notes = f"✅ Customer payment commitment accepted via voice note — dunning paused until {parsed_promise_date.strftime('%Y-%m-%d')}."
+        txn.processed_at = now
+
+        _record_audit(
+            db,
+            txn.txn_id,
+            "DIAGNOSE",
+            "promise_to_pay",
+            f"Voice diagnosis: {txn.diagnosis}"
+        )
+        _record_audit(
+            db,
+            txn.txn_id,
+            "GUARDRAIL",
+            "promise_to_pay",
+            txn.guardrail_notes
+        )
+        _record_audit(
+            db,
+            txn.txn_id,
+            "EXECUTE",
+            "promise_to_pay",
+            f"Customer commitment recorded from voice note: Promised to pay by {parsed_promise_date.strftime('%Y-%m-%d')} (dunning paused)"
+        )
+        outcome_msg = f"Voice commitment recorded for {txn.customer_name}: Promised to pay by {parsed_promise_date.strftime('%Y-%m-%d')} (dunning paused)"
+
+    else:
+        # Standard Diagnosis -> Guardrail -> Execute Flow
+        diag = diagnose_transaction(txn)
+        txn.diagnosis = f"[Voice Note Intake] {extracted.get('intent_summary', '')} — {diag.get('diagnosis', '')}"
+        txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
+        txn.confidence = extracted.get("confidence_level", diag.get("confidence", "high"))
+
+        _record_audit(
+            db,
+            txn.txn_id,
+            "DIAGNOSE",
+            txn.recommended_action,
+            f"Voice diagnosis recommendation: '{txn.recommended_action}' ({txn.confidence} confidence): {txn.diagnosis}"
+        )
+
+        final_action, guardrail_notes = apply_policy(txn, txn.recommended_action)
+        txn.guardrail_notes = guardrail_notes
+
+        _record_audit(
+            db,
+            txn.txn_id,
+            "GUARDRAIL",
+            final_action,
+            f"Policy Engine output: {guardrail_notes}"
+        )
+
+        outcome = execute_action(txn, final_action)
+        txn.processed_at = now
+
+        _record_audit(
+            db,
+            txn.txn_id,
+            "EXECUTE",
+            final_action,
+            outcome.get("message", "")
+        )
+        outcome_msg = outcome.get("message", "")
+
+    db.commit()
+
+    return {
+        "original_transcript": transcript,
+        "extracted_data": extracted,
+        "pipeline_result": {
+            "txn_id": txn.txn_id,
+            "customer_name": txn.customer_name,
+            "amount": txn.amount,
+            "failure_code": txn.failure_code,
+            "status": txn.status,
+            "recommended_action": txn.recommended_action,
+            "guardrail_notes": txn.guardrail_notes,
+            "final_action_taken": txn.final_action_taken,
+            "recovered_amount": txn.recovered_amount,
+            "outcome_message": outcome_msg,
+        },
+        "transaction": _txn_to_response(txn),
+        "summary": _compute_summary(db)
     }
 
 
