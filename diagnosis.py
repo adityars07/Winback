@@ -46,8 +46,8 @@ def _get_groq_client() -> Groq | None:
     if not api_key or api_key == "your_key_here":
         return None
     if _shared_groq_client is None:
-        _shared_http_client = httpx.Client(timeout=3.0)
-        _shared_groq_client = Groq(api_key=api_key, http_client=_shared_http_client)
+        _shared_http_client = httpx.Client(timeout=2.0)
+        _shared_groq_client = Groq(api_key=api_key, http_client=_shared_http_client, max_retries=0)
     return _shared_groq_client
 
 
