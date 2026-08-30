@@ -135,7 +135,7 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
             <button
               className="btn-console-action btn-console-primary"
               onClick={onRunBatch}
-              disabled={isProcessing || transactions.length === 0}
+              disabled={isProcessing}
             >
               {isProcessing ? (
                 <>

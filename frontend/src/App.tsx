@@ -46,7 +46,68 @@ export const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  const handleRunBatchStream = () => {
+  const handleRunBatchStream = async () => {
+    // If no transactions exist, offer to load demo records immediately
+    if (transactions.length === 0) {
+      const shouldSeed = window.confirm(
+        'The recovery queue is empty (0 transactions). Load the 150 deterministic demo records now and start recovery?'
+      );
+      if (shouldSeed) {
+        try {
+          const res = await fetch('/reset', { method: 'POST' });
+          if (res.ok) {
+            const [sumRes, txnRes] = await Promise.all([fetch('/summary'), fetch('/transactions')]);
+            if (sumRes.ok && txnRes.ok) {
+              const sumData = await sumRes.json();
+              const txnData = await txnRes.json();
+              setSummary(sumData);
+              setTransactions(txnData.transactions || []);
+              setTimeout(() => {
+                startStream();
+              }, 200);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Auto-seed error:', e);
+        }
+      }
+      return;
+    }
+
+    // If all transactions have already been processed
+    const pendingCount = transactions.filter((t) => t.status === 'pending').length;
+    if (pendingCount === 0) {
+      const shouldReset = window.confirm(
+        `All ${transactions.length} transactions in this batch have already been processed! Reset with 150 fresh pending transactions and run now?`
+      );
+      if (shouldReset) {
+        try {
+          const res = await fetch('/reset', { method: 'POST' });
+          if (res.ok) {
+            const [sumRes, txnRes] = await Promise.all([fetch('/summary'), fetch('/transactions')]);
+            if (sumRes.ok && txnRes.ok) {
+              const sumData = await sumRes.json();
+              const txnData = await txnRes.json();
+              setSummary(sumData);
+              setTransactions(txnData.transactions || []);
+              setTimeout(() => {
+                startStream();
+              }, 200);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Reset error:', e);
+        }
+      }
+      return;
+    }
+
+    startStream();
+  };
+
+  const startStream = () => {
     setIsProcessing(true);
     setProgress({ current: 0, total: 0 });
 
@@ -60,7 +121,6 @@ export const App: React.FC = () => {
           setProgress({ current: 0, total: data.total });
         } else if (data.type === 'progress') {
           setProgress({ current: data.current, total: data.total });
-          // Update transaction in real-time
           setTransactions((prev) => {
             const index = prev.findIndex((t) => t.txn_id === data.txn.txn_id);
             if (index !== -1) {
@@ -82,12 +142,25 @@ export const App: React.FC = () => {
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error('SSE connection error:', err);
-      setIsProcessing(false);
-      setProgress(null);
+    eventSource.onerror = async (err) => {
+      console.warn('SSE connection error, attempting fallback to POST /run-batch...', err);
       eventSource.close();
-      loadData();
+      try {
+        const res = await fetch('/run-batch', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          setSummary(data);
+          await loadData();
+        } else {
+          alert('Could not connect to backend server at http://localhost:8000. Please ensure the backend is running (uvicorn app:app --port 8000).');
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback batch error:', fallbackErr);
+        alert('Could not connect to backend server at http://localhost:8000. Please ensure the backend is running (uvicorn app:app --port 8000).');
+      } finally {
+        setIsProcessing(false);
+        setProgress(null);
+      }
     };
   };
 
