@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Shield, CheckCircle, ListFilter, ShieldAlert, Sparkles, Upload, Database, Play } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, CheckCircle, ListFilter, ShieldAlert, Upload, Database, Play } from 'lucide-react';
 import { Transaction } from '../types';
 
 interface AuditTrailTableProps {
   transactions: Transaction[];
   onSelectTxn: (txn: Transaction) => void;
-  onSeedDemo?: () => void;
   onOpenUpload?: () => void;
   onProcessSingleTxn?: (txn_id: string) => void;
+  onRunBatch?: () => void;
 }
 
 const formatINR = (num: number): string => {
@@ -25,9 +25,9 @@ const formatINR = (num: number): string => {
 export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
   transactions,
   onSelectTxn,
-  onSeedDemo,
   onOpenUpload,
   onProcessSingleTxn,
+  onRunBatch,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [guardrailFilter, setGuardrailFilter] = useState<string>('all');
@@ -36,6 +36,8 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState<number>(1);
   const pageSize = 25;
+
+  const pendingCount = transactions.filter((t) => t.status === 'pending').length;
 
   const handleSort = (key: keyof Transaction) => {
     if (sortKey === key) {
@@ -59,11 +61,6 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
         (!t.guardrail_notes || !t.guardrail_notes.includes('✅'))
       )
         return false;
-      if (
-        guardrailFilter === 'demo' &&
-        !t.txn_id.startsWith('TXN-DEMO')
-      )
-        return false;
       if (search) {
         const q = search.toLowerCase();
         const matchId = t.txn_id.toLowerCase().includes(q);
@@ -78,13 +75,6 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      // Pin demo transactions to the very top if no custom sort direction
-      if (sortKey === 'amount' && sortDir === 'desc') {
-        if (a.txn_id === 'TXN-DEMO-001') return -1;
-        if (b.txn_id === 'TXN-DEMO-001') return 1;
-        if (a.txn_id === 'TXN-DEMO-002') return -1;
-        if (b.txn_id === 'TXN-DEMO-002') return 1;
-      }
       const aVal = a[sortKey] ?? '';
       const bVal = b[sortKey] ?? '';
       if (typeof aVal === 'number' && typeof bVal === 'number') {
@@ -107,6 +97,11 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
           <ListFilter size={18} color="#00E599" />
           <span>Audit Trail & Execution Log</span>
           <span className="table-count-pill">{filtered.length} records</span>
+          {pendingCount > 0 && (
+            <span className="table-count-pill" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#FBBF24', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+              {pendingCount} pending
+            </span>
+          )}
         </div>
 
         <div className="table-controls-luxury">
@@ -134,9 +129,8 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
               setPage(1);
             }}
           >
-            <option value="all">All Policies</option>
-            <option value="demo">⭐ Presentation Demos (1 & 2)</option>
-            <option value="blocked">Guardrail Blocked (Overridden ⛔)</option>
+            <option value="all">All Policy Decisions</option>
+            <option value="blocked">Guardrail Intercepted (⛔)</option>
             <option value="approved">Approved Pass-Through (✅)</option>
           </select>
 
@@ -153,51 +147,95 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
         </div>
       </div>
 
-      {/* Table Content */}
-      <div className="table-scroll-luxury">
-        <table className="obsidian-table">
+      {/* Pending Execution Alert Banner */}
+      {pendingCount > 0 && (
+        <div style={{
+          margin: '12px 20px 4px 20px',
+          padding: '10px 16px',
+          borderRadius: '8px',
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#FBBF24', display: 'inline-block' }} />
+            <span style={{ fontSize: '12.5px', color: '#FDE68A', fontWeight: 600 }}>
+              {pendingCount} payment failure records awaiting AI diagnosis & recovery execution
+            </span>
+          </div>
+          {onRunBatch && (
+            <button
+              onClick={onRunBatch}
+              style={{
+                background: '#F59E0B',
+                color: '#04140F',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 12px',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Play size={12} fill="#04140F" />
+              <span>Execute All Pending Now</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Main Table */}
+      <div className="table-responsive-luxury">
+        <table className="data-table-luxury">
           <thead>
             <tr>
-              <th onClick={() => handleSort('txn_id')}>Txn ID ↕</th>
-              <th onClick={() => handleSort('customer_name')}>Customer ↕</th>
-              <th onClick={() => handleSort('amount')}>Amount ↕</th>
-              <th onClick={() => handleSort('failure_code')}>Failure Code ↕</th>
+              <th onClick={() => handleSort('txn_id')} style={{ cursor: 'pointer' }}>
+                TXN ID {sortKey === 'txn_id' && (sortDir === 'asc' ? '↑' : '↓')}
+              </th>
+              <th onClick={() => handleSort('customer_name')} style={{ cursor: 'pointer' }}>
+                Customer {sortKey === 'customer_name' && (sortDir === 'asc' ? '↑' : '↓')}
+              </th>
+              <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer' }}>
+                Amount {sortKey === 'amount' && (sortDir === 'asc' ? '↑' : '↓')}
+              </th>
+              <th>Failure Code</th>
               <th>Diagnosis & Recommendation</th>
-              <th>Guardrail Policy Enforcement</th>
-              <th onClick={() => handleSort('final_action_taken')}>Final Action ↕</th>
-              <th onClick={() => handleSort('status')}>Status ↕</th>
-              <th onClick={() => handleSort('recovered_amount')}>Recovered ↕</th>
-              <th>Live Action</th>
+              <th>Policy Guardrail</th>
+              <th>Final Action</th>
+              <th>Status</th>
+              <th>Audit Trail</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: '60px 20px' }}>
-                  <div style={{ maxWidth: '440px', margin: '0 auto' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(0, 229, 153, 0.1)', color: '#00E599', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
-                      <Database size={24} />
+                <td colSpan={10} style={{ textAlign: 'center', padding: '64px 20px' }}>
+                  <div style={{ maxWidth: '460px', margin: '0 auto' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(0, 229, 153, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 auto 16px auto', color: '#00E599' }}>
+                      <Database size={24} style={{ margin: '0 auto' }} />
                     </div>
                     <div style={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF', marginBottom: '6px' }}>
-                      No Transactions in Queue (Database Clear)
+                      No Transactions in Database
                     </div>
                     <p style={{ fontSize: '13px', color: '#A3B8B0', lineHeight: 1.5, marginBottom: '20px' }}>
-                      The database is currently empty. You can ingest your own CSV failure logs or load the deterministic demo dataset.
+                      Please ingest your payment failure CSV dataset or scan invoice documents to start automated recovery.
                     </p>
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
-                      {onOpenUpload && (
-                        <button className="btn-console-action" onClick={onOpenUpload}>
+                    {onOpenUpload && (
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+                        <button className="btn-console-action btn-console-primary" onClick={onOpenUpload}>
                           <Upload size={13} />
-                          <span>Ingest Invoices</span>
+                          <span>Ingest Dataset (CSV / Invoices)</span>
                         </button>
-                      )}
-                      {onSeedDemo && (
-                        <button className="btn-console-action btn-console-primary" onClick={onSeedDemo}>
-                          <Sparkles size={13} />
-                          <span>Load 150 Demo Records</span>
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -211,9 +249,7 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
               paginated.map((t) => {
                 const isBlocked = t.guardrail_notes && t.guardrail_notes.includes('⛔');
                 const isOverridden = isBlocked && t.recommended_action !== t.final_action_taken;
-                const isDemo1 = t.txn_id === 'TXN-DEMO-001';
-                const isDemo2 = t.txn_id === 'TXN-DEMO-002';
-                const rowClass = `status-${t.status} ${isDemo1 || isDemo2 ? 'demo-highlight-row' : ''}`;
+                const rowClass = `status-${t.status}`;
 
                 return (
                   <tr
@@ -221,36 +257,17 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
                     className={rowClass}
                     onClick={() => onSelectTxn(t)}
                     title="Click to inspect full audit event timeline & decision trace"
-                    style={{
-                      borderLeft: isDemo1
-                        ? '3px solid #00E599'
-                        : isDemo2
-                        ? '3px solid #FB7185'
-                        : undefined,
-                    }}
                   >
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span className="mono-hash">{t.txn_id}</span>
-                        {isDemo1 && (
-                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(0, 229, 153, 0.2)', color: '#00E599', display: 'inline-block', width: 'fit-content' }}>
-                            ⭐ DEMO 1 (SUCCESS)
-                          </span>
-                        )}
-                        {isDemo2 && (
-                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(244, 63, 94, 0.2)', color: '#FB7185', display: 'inline-block', width: 'fit-content' }}>
-                            🛡️ DEMO 2 (POLICY BLOCK)
-                          </span>
-                        )}
-                      </div>
+                      <span className="mono-hash">{t.txn_id}</span>
                     </td>
 
                     <td>
                       <div style={{ fontWeight: 600, color: '#FFFFFF' }}>
-                        {t.customer_name}
+                        {t.customer_name || 'Customer'}
                       </div>
                       <div style={{ fontSize: '11px', color: '#6B8077' }}>
-                        {t.customer_email}
+                        {t.customer_email || t.customer_id}
                       </div>
                     </td>
 
@@ -301,38 +318,32 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
                     </td>
 
                     <td>
-                      <span className={`mono-amount ${t.recovered_amount > 0 ? 'recovered-glow' : ''}`}>
-                        {t.recovered_amount > 0 ? `₹${formatINR(t.recovered_amount)}` : '—'}
-                      </span>
+                      <button
+                        className="btn-view-audit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectTxn(t);
+                        }}
+                      >
+                        Inspect Trail →
+                      </button>
                     </td>
 
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td>
                       {t.status === 'pending' && onProcessSingleTxn ? (
                         <button
-                          className="btn-console-action"
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            background: isDemo1
-                              ? 'rgba(0, 229, 153, 0.15)'
-                              : isDemo2
-                              ? 'rgba(251, 113, 133, 0.15)'
-                              : 'rgba(255, 255, 255, 0.05)',
-                            borderColor: isDemo1
-                              ? '#00E599'
-                              : isDemo2
-                              ? '#FB7185'
-                              : 'rgba(255, 255, 255, 0.15)',
-                            color: isDemo1 ? '#00E599' : isDemo2 ? '#FB7185' : '#E2E8F0',
+                          className="btn-run-single"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onProcessSingleTxn(t.txn_id);
                           }}
-                          onClick={() => onProcessSingleTxn(t.txn_id)}
-                          title={`Process ${t.txn_id} individually`}
+                          title="Execute single recovery pipeline for this transaction"
                         >
-                          <Play size={11} />
+                          <Play size={10} fill="#00E599" />
                           <span>Run</span>
                         </button>
                       ) : (
-                        <span style={{ fontSize: '11px', color: '#6B8077' }}>Resolved</span>
+                        <span style={{ fontSize: '11px', color: '#6B8077' }}>Done</span>
                       )}
                     </td>
                   </tr>
@@ -344,25 +355,31 @@ export const AuditTrailTable: React.FC<AuditTrailTableProps> = ({
       </div>
 
       {/* Pagination Footer */}
-      {transactions.length > 0 && (
-        <div className="pagination-luxury">
-          <div>
-            Showing Page {page} of {totalPages} ({sorted.length} total transactions)
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+      {sorted.length > pageSize && (
+        <div className="table-pagination-luxury">
+          <span className="pagination-info">
+            Showing {(page - 1) * pageSize + 1}–
+            {Math.min(page * pageSize, sorted.length)} of {sorted.length} records
+          </span>
+          <div className="pagination-buttons">
             <button
-              className="page-btn-luxury"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="btn-page-nav"
               disabled={page === 1}
+              onClick={() => setPage(page - 1)}
             >
-              <ChevronLeft size={14} /> Prev
+              <ChevronLeft size={14} />
+              <span>Previous</span>
             </button>
+            <span className="page-indicator">
+              {page} / {totalPages}
+            </span>
             <button
-              className="page-btn-luxury"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="btn-page-nav"
               disabled={page === totalPages}
+              onClick={() => setPage(page + 1)}
             >
-              Next <ChevronRight size={14} />
+              <span>Next</span>
+              <ChevronRight size={14} />
             </button>
           </div>
         </div>

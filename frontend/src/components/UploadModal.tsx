@@ -15,6 +15,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [activeTab, setActiveTab] = useState<'csv' | 'ai'>('csv');
   const [file, setFile] = useState<File | null>(null);
   const [documentText, setDocumentText] = useState<string>('');
+  const [replaceExisting, setReplaceExisting] = useState<boolean>(true);
+  const [autoProcess, setAutoProcess] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -31,10 +33,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('replace_existing', replaceExisting ? 'true' : 'false');
+    formData.append('auto_process', autoProcess ? 'true' : 'false');
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
       const res = await fetch('/upload/csv', {
         method: 'POST',
@@ -75,12 +79,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const res = await fetch('/upload/document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_text: documentText }),
+        body: JSON.stringify({
+          document_text: documentText,
+          replace_existing: replaceExisting,
+          auto_process: autoProcess,
+        }),
         signal: controller.signal,
       });
 
@@ -206,8 +214,50 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               />
             </div>
 
-            <div style={{ fontSize: '11px', color: '#A3B8B0', marginBottom: '18px', background: 'rgba(0, 0, 0, 0.3)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              ⚡ <strong>Universal Auto-Mapping:</strong> Supports any gateway CSV columns (e.g. <code>amount</code>, <code>name</code>, <code>email</code>, <code>reason</code>, <code>type</code>). Missing fields are filled automatically.
+            <div style={{ fontSize: '11px', color: '#A3B8B0', marginBottom: '16px', background: 'rgba(0, 0, 0, 0.3)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              ⚡ <strong>Universal Auto-Mapping:</strong> Supports standard CSV columns (<code>amount</code>, <code>customer_name</code>, <code>failure_code</code>, <code>mandate_window_end</code>, <code>type</code>, etc.). Missing fields are auto-filled.
+            </div>
+
+            {/* Ingestion Mode Configuration */}
+            <div style={{
+              background: 'rgba(0, 229, 153, 0.06)',
+              border: '1px solid rgba(0, 229, 153, 0.2)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              marginBottom: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#00E599', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Ingestion Options
+              </div>
+              
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12px', color: '#E2E8F0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(e) => setReplaceExisting(e.target.checked)}
+                  style={{ accentColor: '#00E599', width: '16px', height: '16px', marginTop: '2px', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: '#FFFFFF' }}>Replace existing records (Clean Slate)</div>
+                  <div style={{ fontSize: '11px', color: '#A3B8B0' }}>Wipes previous demo transactions so metrics & audit trail reflect only this dataset.</div>
+                </div>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12px', color: '#E2E8F0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoProcess}
+                  onChange={(e) => setAutoProcess(e.target.checked)}
+                  style={{ accentColor: '#00E599', width: '16px', height: '16px', marginTop: '2px', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: '#FFFFFF' }}>Auto-execute AI Recovery Engine on upload</div>
+                  <div style={{ fontSize: '11px', color: '#A3B8B0' }}>Runs LLM Diagnostician, Policy Guardrails, and Action Executor right after import.</div>
+                </div>
+              </label>
             </div>
 
             <button
@@ -219,10 +269,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               {loading ? (
                 <>
                   <RefreshCw size={14} className="animate-spin" />
-                  <span>Ingesting & Parsing Batch...</span>
+                  <span>{autoProcess ? 'Ingesting & Executing AI Engine...' : 'Ingesting & Parsing Batch...'}</span>
                 </>
               ) : (
-                <span>Upload & Ingest Transactions</span>
+                <span>{autoProcess ? 'Upload & Execute Recovery Pipeline' : 'Upload & Ingest as Pending Queue'}</span>
               )}
             </button>
           </form>
@@ -237,7 +287,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             <textarea
               style={{
                 width: '100%',
-                height: '140px',
+                height: '130px',
                 background: 'rgba(0, 0, 0, 0.3)',
                 border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: '10px',
@@ -246,7 +296,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 fontFamily: 'monospace',
                 fontSize: '12px',
                 outline: 'none',
-                marginBottom: '18px',
+                marginBottom: '14px',
                 resize: 'none',
               }}
               placeholder={`Example:
@@ -259,6 +309,48 @@ Payment failed due to card_expired on 2026-08-20.`}
               }}
             />
 
+            {/* Ingestion Mode Configuration */}
+            <div style={{
+              background: 'rgba(0, 229, 153, 0.06)',
+              border: '1px solid rgba(0, 229, 153, 0.2)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              marginBottom: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#00E599', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Ingestion Options
+              </div>
+              
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12px', color: '#E2E8F0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(e) => setReplaceExisting(e.target.checked)}
+                  style={{ accentColor: '#00E599', width: '16px', height: '16px', marginTop: '2px', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: '#FFFFFF' }}>Replace existing records (Clean Slate)</div>
+                  <div style={{ fontSize: '11px', color: '#A3B8B0' }}>Wipes previous demo transactions.</div>
+                </div>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12px', color: '#E2E8F0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoProcess}
+                  onChange={(e) => setAutoProcess(e.target.checked)}
+                  style={{ accentColor: '#00E599', width: '16px', height: '16px', marginTop: '2px', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, color: '#FFFFFF' }}>Auto-execute AI Recovery Engine immediately</div>
+                  <div style={{ fontSize: '11px', color: '#A3B8B0' }}>Runs LLM Diagnostician & Action Executor instantly.</div>
+                </div>
+              </label>
+            </div>
+
             <button
               type="submit"
               className="btn-console-action btn-console-primary"
@@ -268,12 +360,12 @@ Payment failed due to card_expired on 2026-08-20.`}
               {loading ? (
                 <>
                   <RefreshCw size={14} className="animate-spin" />
-                  <span>Scanning via Groq Llama 3.3 70B...</span>
+                  <span>Scanning via Groq Llama 3.3 70B & Executing...</span>
                 </>
               ) : (
                 <>
                   <Sparkles size={15} />
-                  <span>Extract & Ingest with AI</span>
+                  <span>{autoProcess ? 'Scan, Extract & Recover with AI' : 'Extract & Ingest with AI'}</span>
                 </>
               )}
             </button>

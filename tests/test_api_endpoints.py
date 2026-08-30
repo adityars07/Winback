@@ -82,3 +82,45 @@ def test_clear_database_api():
     sum_data = client.get("/summary").json()
     assert sum_data["total_transactions"] == 0
     assert sum_data["total_at_risk"] == 0.0
+
+
+def test_csv_upload_replace_and_auto_process():
+    # 1. First seed 2 demo records
+    client.post("/demo/seed-pair")
+    assert client.get("/summary").json()["total_transactions"] == 2
+
+    # 2. Upload a custom CSV with replace_existing=True and auto_process=True
+    csv_content = (
+        "customer_name,customer_email,amount_inr,transaction_type,error_code,attempt_number,contact_count_48h,mandate_window_end\n"
+        "Rohan Gupta,rohan@example.com,4500.00,subscription_renewal,card_expired,1,0,2026-09-10T00:00:00\n"
+        "Sneha Verma,sneha@example.com,7200.00,subscription_renewal,insufficient_funds,1,0,2026-08-20T00:00:00\n"
+    )
+    files = {"file": ("test_batch.csv", csv_content, "text/csv")}
+    data = {"replace_existing": "true", "auto_process": "true"}
+
+    upload_res = client.post("/upload/csv", files=files, data=data)
+    assert upload_res.status_code == 200
+    upload_data = upload_res.json()
+    assert upload_data["count"] == 2
+    assert upload_data["auto_processed"] == 2
+
+    # 3. Verify total transactions in DB is exactly 2 (demo records wiped)
+    sum_data = client.get("/summary").json()
+    assert sum_data["total_transactions"] == 2
+    assert sum_data["status_counts"]["pending"] == 0
+    assert sum_data["total_recovered"] > 0
+
+    # 4. Verify mandate window end preserved: Sneha has mandate in past (2026-08-20) -> Rule 2 guardrail block
+    txns_res = client.get("/transactions").json()
+    sneha = next(t for t in txns_res["transactions"] if "Sneha" in t["customer_name"])
+    assert "⛔" in (sneha["guardrail_notes"] or "")
+    assert sneha["final_action_taken"] == "send_payment_link"
+
+    # 5. Verify audit events are created for both
+    audit_res = client.get(f"/audit-events?txn_id={sneha['txn_id']}").json()
+    stages = [e["stage"] for e in audit_res["events"]]
+    assert "DETECT" in stages
+    assert "DIAGNOSE" in stages
+    assert "GUARDRAIL" in stages
+    assert "EXECUTE" in stages
+

@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -33,7 +33,6 @@ from executor import execute_action
 from voice_intake import (
     parse_hinglish_voice_transcript,
     generate_hinglish_voice_response,
-    SAMPLE_HINGLISH_TRANSCRIPTS,
 )
 
 # Configure Logging
@@ -397,12 +396,28 @@ class VoiceIntakeSchema(BaseModel):
     amount: float | None = Field(None, json_schema_extra={"example": 3450.0})
     attempt_number: int | None = Field(None, json_schema_extra={"example": 1})
     customer_contact_count_48h: int | None = Field(None, json_schema_extra={"example": 0})
+    history: list[dict] | None = Field(default_factory=list)
 
 
-@app.get("/voice-intake/samples")
-def get_voice_intake_samples():
-    """Returns curated demo Hinglish voice transcripts for live presentation testing."""
-    return {"samples": SAMPLE_HINGLISH_TRANSCRIPTS}
+@app.get("/voice-intake/active-transactions")
+def get_voice_intake_active_transactions(
+    limit: int = 25,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns real failed/pending transactions from the database available for live voice recovery dialing.
+    """
+    pending_txns = db.query(Transaction).filter(
+        Transaction.status.in_(["pending", "escalated", "unrecoverable", "promised"])
+    ).order_by(Transaction.amount.desc()).limit(limit).all()
+
+    if not pending_txns:
+        pending_txns = db.query(Transaction).order_by(Transaction.amount.desc()).limit(limit).all()
+
+    return {
+        "transactions": [_txn_to_response(t) for t in pending_txns],
+        "count": len(pending_txns),
+    }
 
 
 @app.post("/voice-intake")
@@ -427,8 +442,14 @@ def process_voice_intake(
 
     # 1. Parse Hinglish via Groq / Fallback
     extracted = parse_hinglish_voice_transcript(transcript, reference_date=now)
-    err_code = extracted.get("error_code", "insufficient_funds")
-    txn_type = extracted.get("transaction_type", "subscription_renewal")
+    err_code = extracted.get("error_code") or "insufficient_funds"
+    if err_code not in ("insufficient_funds", "bank_timeout", "card_expired", "mandate_declined", "checkout_dropoff", "invoice_overdue"):
+        err_code = "insufficient_funds"
+
+    txn_type = extracted.get("transaction_type") or "subscription_renewal"
+    if txn_type not in ("subscription_renewal", "checkout_abandoned", "invoice_overdue"):
+        txn_type = "subscription_renewal"
+
     promised_date_str = extracted.get("promised_date")
     amount = payload.amount or extracted.get("amount_inr") or 4999.0
     cust_name = payload.customer_name or extracted.get("customer_name") or "Voice Customer"
@@ -591,7 +612,8 @@ def process_voice_intake(
         final_action=final_action,
         status=txn.status,
         outcome_msg=outcome_msg,
-        customer_name=txn.customer_name
+        customer_name=txn.customer_name,
+        history=payload.history
     )
 
     _record_audit(
@@ -694,6 +716,38 @@ def _extract_number(val: any, default: float = 1499.0) -> float:
         return default
 
 
+def _parse_datetime(val: any) -> datetime | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.replace(tzinfo=None)
+    s = str(val).strip()
+    if not s or s.lower() in ("none", "null", "n/a", "", "nan"):
+        return None
+    try:
+        clean_s = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_s)
+        return dt.replace(tzinfo=None)
+    except Exception:
+        pass
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d",
+        "%d-%m-%Y %H:%M:%S",
+        "%d-%m-%Y",
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return None
+
+
 def _find_field(row: dict, candidates: list[str]) -> str | None:
     # Look for exact or fuzzy match in dict keys
     norm_map = {re.sub(r"[\s_\-.]+", "", str(k).lower()): v for k, v in row.items() if k is not None}
@@ -709,10 +763,13 @@ def _find_field(row: dict, candidates: list[str]) -> str | None:
 @app.post("/upload/csv")
 async def upload_csv(
     file: UploadFile = File(...),
+    replace_existing: bool = Form(True),
+    auto_process: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     """
-    Ultra-resilient bulk import: accepts any financial transaction CSV format with fuzzy header matching.
+    Ultra-resilient bulk import: accepts any financial transaction CSV format with fuzzy header matching,
+    preserves date/mandate windows, supports replacing or appending datasets, and optional auto-execution.
     """
     import string, random, re
     if not file.filename.endswith(".csv"):
@@ -735,8 +792,14 @@ async def upload_csv(
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="Could not detect column headers in the CSV file.")
 
+    if replace_existing:
+        db.query(AuditEvent).delete()
+        db.query(Transaction).delete()
+        db.commit()
+
     created = []
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    existing_txn_ids = {t.txn_id for t in db.query(Transaction.txn_id).all()}
 
     for idx, row in enumerate(reader, start=1):
         if not row or not any(row.values()):
@@ -744,7 +807,7 @@ async def upload_csv(
         try:
             # 1. Amount
             raw_amt = _find_field(row, [
-                "amount", "amt", "transaction_amount", "amount_in_inr", "inr", "price",
+                "amount", "amt", "transaction_amount", "amount_in_inr", "amount_inr", "inr", "price",
                 "total", "value", "net_amount", "payment_amount", "fee", "cost", "sum"
             ])
             amount = _extract_number(raw_amt, default=round(random.uniform(999, 12999), 2))
@@ -782,8 +845,8 @@ async def upload_csv(
 
             # 6. Failure Code
             raw_fail = _find_field(row, [
-                "failure_code", "reason", "failure_reason", "error_code", "error",
-                "decline_reason", "status_code", "failure", "remark", "status"
+                "failure_code", "error_code", "reason", "failure_reason", "error",
+                "decline_reason", "status_code", "failure", "remark", "failure_type"
             ]) or ""
             raw_fail_lower = raw_fail.lower()
             if "fund" in raw_fail_lower or "insufficient" in raw_fail_lower or "balance" in raw_fail_lower:
@@ -812,7 +875,7 @@ async def upload_csv(
 
             # 8. Contact Count
             raw_contact = _find_field(row, [
-                "customer_contact_count_48h", "contact_count", "outreach_count",
+                "customer_contact_count_48h", "contact_count_48h", "contact_count", "outreach_count",
                 "contacts", "reminders", "contact_count_48h", "outreach"
             ])
             try:
@@ -820,12 +883,46 @@ async def upload_csv(
             except Exception:
                 contact_count = 0
 
-            mandate_end = None
-            if txn_type == "subscription_renewal":
-                from datetime import timedelta
-                mandate_end = now + timedelta(days=random.randint(1, 10))
+            # 9. Mandate Window End (preserve actual dataset mandate window)
+            raw_mandate = _find_field(row, [
+                "mandate_window_end", "mandate_end", "mandate_expiry", "mandate_window", "mandate_date"
+            ])
+            mandate_end = _parse_datetime(raw_mandate)
+            if mandate_end is None and txn_type == "subscription_renewal":
+                mandate_end = now + timedelta(days=5)
 
-            txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
+            # 10. Last Attempt / Timestamp
+            raw_ts = _find_field(row, [
+                "last_attempt_ts", "timestamp", "date", "created_at", "attempt_date", "txn_time", "transaction_date"
+            ])
+            last_attempt = _parse_datetime(raw_ts) or now
+
+            # 11. Transaction ID
+            raw_txn_id = _find_field(row, [
+                "txn_id", "transaction_id", "id", "reference_id", "order_id"
+            ])
+            if raw_txn_id:
+                clean_id = re.sub(r"[^\w\-]", "", raw_txn_id)
+                txn_id = clean_id if clean_id and clean_id not in existing_txn_ids else f"txn_{clean_id or ''}_{''.join(random.choices(string.ascii_letters + string.digits, k=4))}"
+            else:
+                txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
+            existing_txn_ids.add(txn_id)
+
+            # 12. Pre-computed columns if present in exported/labeled dataset
+            raw_status = _find_field(row, ["status", "txn_status", "recovery_status", "state"])
+            status = raw_status.lower() if raw_status and raw_status.lower() in ["pending", "recovered", "escalated", "unrecoverable", "promised"] else "pending"
+
+            diagnosis = _find_field(row, ["diagnosis", "reasoning", "ai_diagnosis"])
+            recommended_action = _find_field(row, ["recommended_action", "recommendation", "action_recommended"])
+            confidence = _find_field(row, ["confidence", "ai_confidence"])
+            guardrail_notes = _find_field(row, ["guardrail_notes", "guardrail_policy", "policy_notes", "guardrails"])
+            final_action_taken = _find_field(row, ["final_action_taken", "final_action", "action_taken", "executed_action"])
+            recovered_amount = _extract_number(_find_field(row, ["recovered_amount", "amount_recovered", "recovered_inr"]), default=0.0)
+            promise_date = _parse_datetime(_find_field(row, ["promise_date", "promised_date", "promise_due_date"]))
+            raw_broken = _find_field(row, ["is_broken_promise", "broken_promise"])
+            is_broken_promise = 1 if raw_broken in ("1", "true", "True", "yes", "Yes") else 0
+            processed_at = _parse_datetime(_find_field(row, ["processed_at", "resolved_at", "execution_time"]))
+
             txn = Transaction(
                 txn_id=txn_id,
                 customer_id=cust_id,
@@ -836,13 +933,31 @@ async def upload_csv(
                 failure_code=failure_code,
                 attempt_number=attempt_number,
                 customer_contact_count_48h=contact_count,
-                last_attempt_ts=now,
+                last_attempt_ts=last_attempt,
                 mandate_window_end=mandate_end,
-                status="pending",
+                status=status,
+                promise_date=promise_date,
+                is_broken_promise=is_broken_promise,
+                diagnosis=diagnosis,
+                recommended_action=recommended_action,
+                confidence=confidence,
+                guardrail_notes=guardrail_notes,
+                final_action_taken=final_action_taken,
+                recovered_amount=recovered_amount,
+                processed_at=processed_at or (now if status != "pending" else None),
             )
             db.add(txn)
             created.append(txn)
+
+            # Record initial audit events
             _record_audit(db, txn_id, "DETECT", None, f"Batch imported from CSV '{file.filename}': ₹{amount:,.2f}")
+            if diagnosis:
+                _record_audit(db, txn_id, "DIAGNOSE", recommended_action, f"Imported Diagnosis: {diagnosis}")
+            if guardrail_notes:
+                _record_audit(db, txn_id, "GUARDRAIL", final_action_taken, f"Imported Guardrail: {guardrail_notes}")
+            if final_action_taken:
+                _record_audit(db, txn_id, "EXECUTE", final_action_taken, f"Imported Outcome: Status is '{status}', Recovered: ₹{recovered_amount:,.2f}")
+
         except Exception as err:
             logger.warning(f"Error parsing row {idx}: {err}")
 
@@ -853,16 +968,53 @@ async def upload_csv(
         )
 
     db.commit()
+
+    # Optional auto-processing for pending transactions
+    auto_processed_count = 0
+    if auto_process:
+        for txn in created:
+            if txn.status == "pending":
+                try:
+                    diag = diagnose_transaction(txn)
+                    txn.diagnosis = diag.get("diagnosis", "")
+                    txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
+                    txn.confidence = diag.get("confidence", "medium")
+
+                    _record_audit(db, txn.txn_id, "DIAGNOSE", txn.recommended_action, f"LLM recommended '{txn.recommended_action}' ({txn.confidence} confidence): {txn.diagnosis}")
+
+                    final_action, guardrail_notes = apply_policy(txn, txn.recommended_action)
+                    txn.guardrail_notes = guardrail_notes
+
+                    _record_audit(db, txn.txn_id, "GUARDRAIL", final_action, f"Policy Engine output: {guardrail_notes}")
+
+                    outcome = execute_action(txn, final_action)
+                    txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+                    _record_audit(db, txn.txn_id, "EXECUTE", final_action, outcome.get("message", ""))
+                    auto_processed_count += 1
+                except Exception as e:
+                    logger.error(f"Auto-process error on {txn.txn_id}: {e}")
+        db.commit()
+
     total_val = sum(t.amount for t in created)
+    summary = _compute_summary(db)
+    msg = f"Successfully imported {len(created)} transactions (Total: ₹{total_val:,.2f}) from '{file.filename}'."
+    if auto_process:
+        msg += f" Automatically processed {auto_processed_count} transactions through the AI Recovery Pipeline."
+
     return {
-        "message": f"Successfully imported {len(created)} failed transactions (Total: ₹{total_val:,.2f}) from '{file.filename}'.",
+        "message": msg,
         "count": len(created),
         "total_amount": total_val,
+        "auto_processed": auto_processed_count,
+        "summary": summary,
     }
 
 
 class DocumentScanSchema(BaseModel):
     document_text: str = Field(..., json_schema_extra={"example": "Invoice #8902 to Priya Sharma (priya@gmail.com) for amount ₹8,450. Payment failed due to card_expired on 2026-08-20."})
+    replace_existing: bool = Field(True, json_schema_extra={"example": True})
+    auto_process: bool = Field(False, json_schema_extra={"example": False})
 
 
 @app.post("/upload/document")
@@ -916,8 +1068,17 @@ No other text."""
             "customer_contact_count_48h": 0,
         }
 
+    if payload.replace_existing:
+        db.query(AuditEvent).delete()
+        db.query(Transaction).delete()
+        db.commit()
+
     txn_id = f"txn_{''.join(random.choices(string.ascii_letters + string.digits, k=6))}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    mandate_end = None
+    if extracted.get("type") == "subscription_renewal":
+        mandate_end = now + timedelta(days=5)
 
     txn = Transaction(
         txn_id=txn_id,
@@ -930,6 +1091,7 @@ No other text."""
         attempt_number=int(extracted.get("attempt_number", 1)),
         customer_contact_count_48h=int(extracted.get("customer_contact_count_48h", 0)),
         last_attempt_ts=now,
+        mandate_window_end=mandate_end,
         status="pending",
     )
     db.add(txn)
@@ -937,10 +1099,33 @@ No other text."""
 
     _record_audit(db, txn_id, "DETECT", None, f"Extracted & ingested by AI Document Scanner: ₹{txn.amount:,.2f}")
 
+    if payload.auto_process:
+        try:
+            diag = diagnose_transaction(txn)
+            txn.diagnosis = diag.get("diagnosis", "")
+            txn.recommended_action = diag.get("recommended_action", "escalate_to_human")
+            txn.confidence = diag.get("confidence", "medium")
+
+            _record_audit(db, txn.txn_id, "DIAGNOSE", txn.recommended_action, f"LLM recommended '{txn.recommended_action}' ({txn.confidence} confidence): {txn.diagnosis}")
+
+            final_action, guardrail_notes = apply_policy(txn, txn.recommended_action)
+            txn.guardrail_notes = guardrail_notes
+
+            _record_audit(db, txn.txn_id, "GUARDRAIL", final_action, f"Policy Engine output: {guardrail_notes}")
+
+            outcome = execute_action(txn, final_action)
+            txn.processed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+            _record_audit(db, txn.txn_id, "EXECUTE", final_action, outcome.get("message", ""))
+            db.commit()
+        except Exception as e:
+            logger.error(f"Auto-process scan error on {txn.txn_id}: {e}")
+
     return {
-        "message": "AI Document Ingestion complete! Transaction added to pending queue.",
+        "message": "AI Document Ingestion complete!" + (" Transaction processed through recovery engine." if payload.auto_process else " Added to pending queue."),
         "extracted_data": extracted,
-        "transaction": _txn_to_response(txn)
+        "transaction": _txn_to_response(txn),
+        "summary": _compute_summary(db),
     }
 
 

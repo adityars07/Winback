@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, RotateCcw, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu, Trash2, Sparkles, AlertTriangle, ShieldAlert, Target, Mic } from 'lucide-react';
+import { Play, Download, Upload, Zap, ShieldCheck, Activity, Database, CheckCircle2, RefreshCw, Cpu, Trash2, Mic, Target } from 'lucide-react';
 import { Transaction, SummaryStats } from '../types';
 import { AnalyticsCharts } from './AnalyticsCharts';
 import { AuditTrailTable } from './AuditTrailTable';
@@ -10,8 +10,6 @@ interface LiveConsoleSectionProps {
   transactions: Transaction[];
   onRunBatch: () => void;
   onClear: () => void;
-  onSeedDemo: () => void;
-  onSeedDemoPair: () => void;
   onProcessSingleTxn: (txn_id: string) => void;
   onExport: () => void;
   onOpenUpload: () => void;
@@ -26,8 +24,6 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
   transactions,
   onRunBatch,
   onClear,
-  onSeedDemo,
-  onSeedDemoPair,
   onProcessSingleTxn,
   onExport,
   onOpenUpload,
@@ -49,9 +45,6 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
   const guardrailBlocks = summary ? summary.guardrail_blocks : 0;
   const guardrailAmount = formatInr(summary?.guardrail_blocked_amount);
 
-  const demo1Txn = transactions.find((t) => t.txn_id === 'TXN-DEMO-001');
-  const demo2Txn = transactions.find((t) => t.txn_id === 'TXN-DEMO-002');
-
   return (
     <section className="live-console-section" id="console">
       <div className="container-wide">
@@ -63,11 +56,11 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
               <span>Live Recovery Engine Console</span>
               <span className="engine-status-tag">
                 <Cpu size={12} />
-                Groq AI + Deterministic Engine Active
+                Production Groq AI + Policy Guardrails
               </span>
             </h2>
             <p className="console-subtitle">
-              Deterministic payment recovery pipeline, mathematical revenue conservation, NPCI compliance guardrails & immutable audit trail.
+              Real-time payment recovery pipeline, mathematical revenue conservation, NPCI regulatory guardrails & immutable audit log.
             </p>
           </div>
 
@@ -75,7 +68,7 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
             <button
               className="btn-console-action"
               onClick={onOpenVoiceModal}
-              title="Hinglish Voice-Note Recovery Studio & Live Mic"
+              title="Voice Recovery Studio & Live Calling"
               style={{ color: '#38BDF8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
             >
               <Mic size={13} color="#38BDF8" />
@@ -85,10 +78,10 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
             <button
               className="btn-console-action"
               onClick={onOpenUpload}
-              title="Import CSV or AI Scan Invoices"
+              title="Import CSV Dataset or AI Scan Invoices"
             >
               <Upload size={13} />
-              <span>Ingest Invoices</span>
+              <span>Ingest Dataset (CSV/OCR)</span>
             </button>
 
             <button
@@ -104,38 +97,17 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
               className="btn-console-action"
               onClick={onClear}
               disabled={isProcessing}
-              title="Completely wipe all transactions to 0"
+              title="Reset all transactions"
               style={{ color: '#FB7185', borderColor: 'rgba(244, 63, 94, 0.3)' }}
             >
               <Trash2 size={13} />
-              <span>Clear All</span>
-            </button>
-
-            <button
-              className="btn-console-action"
-              onClick={onSeedDemoPair}
-              disabled={isProcessing}
-              title="Load ONLY the 2 presentation demo transactions"
-              style={{ color: '#38BDF8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
-            >
-              <Target size={13} color="#38BDF8" />
-              <span>Load 2 Demo Records</span>
-            </button>
-
-            <button
-              className="btn-console-action"
-              onClick={onSeedDemo}
-              disabled={isProcessing}
-              title="Load 150 deterministic transactions (with Demo 1 & 2 included)"
-            >
-              <Sparkles size={13} color="#00E599" />
-              <span>Load 150 Demo Records</span>
+              <span>Clear Database</span>
             </button>
 
             <button
               className="btn-console-action btn-console-primary"
               onClick={onRunBatch}
-              disabled={isProcessing}
+              disabled={isProcessing || transactions.filter((t) => t.status === 'pending').length === 0}
             >
               {isProcessing ? (
                 <>
@@ -152,78 +124,6 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
                   <span>Execute Recovery Batch</span>
                 </>
               )}
-            </button>
-          </div>
-        </div>
-
-        {/* Presentation Demo Showcase Card / Quick Launch Toolbar */}
-        <div
-          style={{
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
-            border: '1px solid rgba(0, 229, 153, 0.25)',
-            borderRadius: '12px',
-            padding: '16px 20px',
-            marginBottom: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}
-        >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00E599', display: 'inline-block' }} />
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#FFFFFF', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
-                ⭐ Presentation Demo Showcase (100% Deterministic — Zero RNG)
-              </span>
-            </div>
-            <p style={{ fontSize: '12px', color: '#A3B8B0', margin: 0 }}>
-              Two deterministic transactions designed for live demo walkthroughs: One guaranteed AI recovery, one guaranteed NPCI policy block.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Demo 1 Trigger */}
-            <button
-              className="btn-console-action"
-              style={{
-                background: 'rgba(0, 229, 153, 0.12)',
-                borderColor: '#00E599',
-                color: '#00E599',
-                fontWeight: 700,
-                padding: '8px 14px',
-              }}
-              onClick={() => onProcessSingleTxn('TXN-DEMO-001')}
-              disabled={isProcessing}
-              title="Run single recovery on TXN-DEMO-001 (Aarav Sharma - ₹12,499.00)"
-            >
-              <Zap size={14} color="#00E599" />
-              <span>
-                Demo 1: Auto Recovery (₹12,499)
-                {demo1Txn?.status === 'recovered' && ' ✓'}
-              </span>
-            </button>
-
-            {/* Demo 2 Trigger */}
-            <button
-              className="btn-console-action"
-              style={{
-                background: 'rgba(244, 63, 94, 0.12)',
-                borderColor: '#FB7185',
-                color: '#FB7185',
-                fontWeight: 700,
-                padding: '8px 14px',
-              }}
-              onClick={() => onProcessSingleTxn('TXN-DEMO-002')}
-              disabled={isProcessing}
-              title="Run single policy block on TXN-DEMO-002 (Priya Patel - ₹8,750.00)"
-            >
-              <ShieldAlert size={14} color="#FB7185" />
-              <span>
-                Demo 2: NPCI Policy Block (₹8,750)
-                {demo2Txn?.guardrail_notes?.includes('⛔') && ' ⛔'}
-              </span>
             </button>
           </div>
         </div>
@@ -336,9 +236,9 @@ export const LiveConsoleSection: React.FC<LiveConsoleSectionProps> = ({
         <AuditTrailTable
           transactions={transactions}
           onSelectTxn={onSelectTxn}
-          onSeedDemo={onSeedDemo}
           onOpenUpload={onOpenUpload}
           onProcessSingleTxn={onProcessSingleTxn}
+          onRunBatch={onRunBatch}
         />
       </div>
     </section>

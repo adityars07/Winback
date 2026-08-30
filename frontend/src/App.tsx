@@ -296,8 +296,6 @@ export const App: React.FC = () => {
         transactions={transactions}
         onRunBatch={handleRunBatchStream}
         onClear={handleClear}
-        onSeedDemo={handleSeedDemo}
-        onSeedDemoPair={handleSeedDemoPair}
         onProcessSingleTxn={handleProcessSingleTxn}
         onExport={handleExport}
         onOpenUpload={() => setIsUploadOpen(true)}

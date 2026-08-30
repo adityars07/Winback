@@ -1975,7 +1975,7 @@ body {
 }
 
 .voice-dialog-luxury {
-  width: 820px !important;
+  width: 860px !important;
   max-width: 96vw !important;
   background: #04140F !important;
   border: 1px solid rgba(56, 189, 248, 0.35) !important;
@@ -1991,6 +1991,135 @@ body {
   background: rgba(56, 189, 248, 0.08) !important;
   border-color: rgba(56, 189, 248, 0.4) !important;
   box-shadow: 0 8px 24px rgba(56, 189, 248, 0.15);
+}
+
+/* ── Live 2-Way Voice Call Callout & Orb System ──────────────────────────── */
+.voice-call-orb-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  background: radial-gradient(circle at center, rgba(56, 189, 248, 0.12) 0%, rgba(4, 20, 15, 0.8) 70%);
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.voice-call-orb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-call-orb.orb-listening {
+  background: radial-gradient(circle, #38BDF8 0%, #0284C7 100%);
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.7), 0 0 70px rgba(56, 189, 248, 0.3);
+  animation: orbListeningPulse 1.4s infinite ease-in-out;
+}
+
+.voice-call-orb.orb-speaking {
+  background: radial-gradient(circle, #00E599 0%, #059669 100%);
+  box-shadow: 0 0 40px rgba(0, 229, 153, 0.8), 0 0 80px rgba(0, 229, 153, 0.4);
+  animation: orbSpeakingPulse 1s infinite alternate ease-in-out;
+}
+
+.voice-call-orb.orb-processing {
+  background: radial-gradient(circle, #FBBF24 0%, #D97706 100%);
+  box-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
+  animation: orbProcessingSpin 2s infinite linear;
+}
+
+.voice-call-orb.orb-idle {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+}
+
+@keyframes orbListeningPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); }
+  50% { transform: scale(1.08); box-shadow: 0 0 50px rgba(56, 189, 248, 0.9), 0 0 90px rgba(56, 189, 248, 0.4); }
+  100% { transform: scale(0.95); box-shadow: 0 0 25px rgba(56, 189, 248, 0.5); }
+}
+
+@keyframes orbSpeakingPulse {
+  0% { transform: scale(1.0); box-shadow: 0 0 30px rgba(0, 229, 153, 0.6); }
+  100% { transform: scale(1.12); box-shadow: 0 0 60px rgba(0, 229, 153, 1), 0 0 100px rgba(0, 229, 153, 0.5); }
+}
+
+@keyframes orbProcessingSpin {
+  0% { transform: rotate(0deg) scale(0.98); }
+  50% { transform: rotate(180deg) scale(1.04); }
+  100% { transform: rotate(360deg) scale(0.98); }
+}
+
+/* Sound Wave Bars */
+.voice-wave-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin-top: 10px;
+}
+
+.voice-wave-bar {
+  width: 3.5px;
+  border-radius: 4px;
+  background: #38BDF8;
+  animation: waveAnimation 0.8s infinite ease-in-out alternate;
+}
+
+.voice-wave-bar:nth-child(1) { height: 8px; animation-delay: 0.1s; }
+.voice-wave-bar:nth-child(2) { height: 16px; animation-delay: 0.25s; }
+.voice-wave-bar:nth-child(3) { height: 24px; animation-delay: 0.4s; }
+.voice-wave-bar:nth-child(4) { height: 18px; animation-delay: 0.2s; }
+.voice-wave-bar:nth-child(5) { height: 10px; animation-delay: 0.35s; }
+
+@keyframes waveAnimation {
+  0% { transform: scaleY(0.3); opacity: 0.5; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/* 2-Way Chat Transcript Feed */
+.voice-transcript-feed {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 16px;
+}
+
+.voice-msg-user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(2, 132, 199, 0.25) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 12px 12px 2px 12px;
+  padding: 8px 12px;
+  color: #FFFFFF;
+  font-size: 12.5px;
+}
+
+.voice-msg-agent {
+  align-self: flex-start;
+  max-width: 85%;
+  background: linear-gradient(135deg, rgba(0, 229, 153, 0.12) 0%, rgba(5, 150, 105, 0.18) 100%);
+  border: 1px solid rgba(0, 229, 153, 0.35);
+  border-radius: 12px 12px 12px 2px;
+  padding: 10px 14px;
+  color: #FFFFFF;
+  font-size: 12.5px;
 }
 
 /* Responsive queries */

@@ -22,18 +22,6 @@ def _clean_db():
     db.close()
 
 
-def test_get_voice_samples_includes_policy_blocks():
-    response = client.get("/voice-intake/samples")
-    assert response.status_code == 200
-    data = response.json()
-    assert "samples" in data
-    assert len(data["samples"]) >= 5
-    # Verify both success and policy blocked test types are present
-    test_types = {s.get("test_type") for s in data["samples"]}
-    assert "success" in test_types
-    assert "policy_blocked" in test_types
-
-
 def test_voice_recovery_salary_delay_promise():
     _clean_db()
     transcript = "Bhai mera payment fail ho gaya, account mein balance nahi tha. Kal meri salary aayegi, 28 tarikh ko phir se retry karna, pakka ho jayega."
@@ -212,3 +200,47 @@ def test_voice_intake_for_existing_transaction():
     assert data["pipeline_result"]["final_action_taken"] == "send_payment_link"
     assert data["pipeline_result"]["status"] == "recovered"
     assert "voice_agent_reply" in data
+
+
+def test_get_voice_intake_active_transactions():
+    _clean_db()
+    db = SessionLocal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    t1 = Transaction(
+        txn_id="txn_active_01",
+        customer_id="cust_01",
+        customer_name="Rohan Gupta",
+        type="subscription_renewal",
+        amount=12000.0,
+        failure_code="insufficient_funds",
+        last_attempt_ts=now,
+        status="pending"
+    )
+    db.add(t1)
+    db.commit()
+    db.close()
+
+    response = client.get("/voice-intake/active-transactions")
+    assert response.status_code == 200
+    data = response.json()
+    assert "transactions" in data
+    assert data["count"] >= 1
+    assert any(t["txn_id"] == "txn_active_01" for t in data["transactions"])
+
+
+def test_voice_intake_multi_turn_history():
+    _clean_db()
+    history = [
+        {"role": "agent", "text": "Namaste Priya ji! Main Winback AI agent hoon."},
+        {"role": "user", "text": "Mera card expire ho gaya hai pichle hafte."}
+    ]
+    response = client.post("/voice-intake", json={
+        "transcript": "Haan WhatsApp pe link bhej do abhi pay kar deti hoon.",
+        "customer_name": "Priya Patel",
+        "amount": 3499.0,
+        "history": history
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert "voice_agent_reply" in data
+    assert data["pipeline_result"]["status"] in ["recovered", "promised", "escalated"]
